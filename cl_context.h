@@ -1,7 +1,20 @@
+#pragma once
+
 #include <CL/cl.hpp>
 #include <cassert>
 #include <fstream>
 #include <iostream>
+
+#define CL_CHECK(x) __CL_CHECK(x, #x, __FILE__, __LINE__)
+#define __CL_CHECK(x, str, file, line)                                         \
+  do {                                                                         \
+    int err = (x);                                                             \
+    if (err != CL_SUCCESS) {                                                   \
+      throw std::runtime_error(str " failed at " file ":" +                    \
+                               std::to_string(line) + ": " +                   \
+                               std::to_string(err));                           \
+    }                                                                          \
+  } while (false)
 
 struct CLContext {
   cl::Device device;
@@ -26,9 +39,7 @@ struct CLContext {
   }
 
   cl::Program compileProgram(const std::string &source) {
-    cl::Program::Sources sources = {{source.c_str(), source.size()}};
-    cl::Program program(context, sources);
-
+    cl::Program program(context, source);
     auto err = program.build("-cl-std=CL1.2");
     if (err != CL_SUCCESS) {
       std::string error = program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(device);
@@ -51,27 +62,8 @@ struct CLContext {
 std::string loadTextFile(const char *filename) {
   std::ifstream ifs(filename);
   if (!ifs.is_open()) {
-    throw std::runtime_error("Could not find hello_world.cl");
+    throw std::runtime_error("Could not find " + std::string{filename});
   }
   return std::string((std::istreambuf_iterator<char>(ifs)),
                      std::istreambuf_iterator<char>());
-}
-
-int main() {
-  auto ctx = CLContext::create();
-  auto program = ctx.compileProgram(loadTextFile("../hello_world.cl"));
-
-  char buf[14];
-  cl::Buffer membuf(ctx.context, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY,
-                    sizeof(buf));
-  cl::Kernel kernel = ctx.createKernel(program, "hello_world");
-  kernel.setArg(0, membuf);
-
-  cl::CommandQueue queue(ctx.context, ctx.device);
-  queue.enqueueTask(kernel);
-  queue.enqueueReadBuffer(membuf, true, 0, sizeof(buf), buf);
-
-  std::cout << buf << std::endl;
-
-  return 0;
 }
