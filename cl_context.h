@@ -38,9 +38,10 @@ struct CLContext {
     return CLContext{device, cl::Context{device}};
   }
 
-  cl::Program compileProgram(const std::string &source) {
+  cl::Program compileProgram(const std::string &source, const std::string& additional_options = "") {
     cl::Program program(context, source);
-    auto err = program.build("-cl-std=CL1.2");
+    auto options = "-cl-std=CL1.2 " + additional_options;
+    auto err = program.build(options.c_str());
     if (err != CL_SUCCESS) {
       std::string error = program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(device);
       throw std::runtime_error("Error when building CL kernel: " + error);
