@@ -21,8 +21,12 @@ find_package(OpenCL REQUIRED)
 add_library(cl_context INTERFACE)
 target_include_directories(cl_context INTERFACE .)
 
+add_executable(process_array process_array.cpp)
+target_link_libraries(process_array cl_context OpenCL)
+
 add_executable(mandelbrot mandelbrot.cpp)
 target_link_libraries(mandelbrot cl_context OpenCL stb)
 
-add_executable(process_array process_array.cpp)
-target_link_libraries(process_array cl_context OpenCL)
+add_executable(numerical_reduction numerical_reduction.cpp)
+target_link_libraries(numerical_reduction cl_context OpenCL stb)
+target_compile_features(numerical_reduction PUBLIC cxx_std_17)

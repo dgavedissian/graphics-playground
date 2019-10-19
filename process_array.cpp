@@ -1,8 +1,14 @@
 #include "cl_context.h"
 
+const char source[] = R"""(
+__kernel void process_array(__global const int* in_data, __global int* out_data) {
+    out_data[get_global_id(0)] = in_data[get_global_id(0)] * 2;
+}
+)""";
+
 int main() {
   auto ctx = CLContext::create();
-  auto program = ctx.compileProgram(loadTextFile("../process_array.cl"));
+  auto program = ctx.compileProgram(source);
 
   std::vector<int> vec(1024);
   std::fill(vec.begin(), vec.end(), 1);
@@ -18,10 +24,9 @@ int main() {
   CL_CHECK(kernel.setArg(0, in_buf));
   CL_CHECK(kernel.setArg(1, out_buf));
 
-  cl::CommandQueue queue(ctx.context, ctx.device);
-  CL_CHECK(queue.enqueueNDRangeKernel(kernel, cl::NullRange,
+  CL_CHECK(ctx.queue.enqueueNDRangeKernel(kernel, cl::NullRange,
                                       cl::NDRange{vec.size()}));
-  CL_CHECK(queue.enqueueReadBuffer(out_buf, CL_FALSE, 0,
+  CL_CHECK(ctx.queue.enqueueReadBuffer(out_buf, CL_FALSE, 0,
                                    sizeof(int) * vec.size(), vec.data()));
 
   // Wait on pending operations.

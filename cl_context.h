@@ -19,6 +19,7 @@
 struct CLContext {
   cl::Device device;
   cl::Context context;
+  cl::CommandQueue queue;
 
   static CLContext create() {
     std::vector<cl::Platform> platforms;
@@ -27,7 +28,7 @@ struct CLContext {
     auto platform = platforms.front();
 
     std::vector<cl::Device> devices;
-    platform.getDevices(CL_DEVICE_TYPE_ALL, &devices);
+    platform.getDevices(CL_DEVICE_TYPE_GPU, &devices);
     assert(!devices.empty());
     auto device = devices.front();
 
@@ -35,10 +36,13 @@ struct CLContext {
     std::cout << "Version: " << device.getInfo<CL_DEVICE_VERSION>()
               << std::endl;
 
-    return CLContext{device, cl::Context{device}};
+    cl::Context context{device};
+    cl::CommandQueue command_queue{context, device};
+    return CLContext{device, context, command_queue};
   }
 
-  cl::Program compileProgram(const std::string &source, const std::string& additional_options = "") {
+  cl::Program compileProgram(const std::string &source,
+                             const std::string &additional_options = "") {
     cl::Program program(context, source);
     auto options = "-cl-std=CL1.2 " + additional_options;
     auto err = program.build(options.c_str());
