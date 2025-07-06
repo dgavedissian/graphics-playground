@@ -14,6 +14,21 @@ FetchContent_MakeAvailable(stb)
 add_library(stb INTERFACE)
 target_include_directories(stb INTERFACE ${stb_SOURCE_DIR})
 
+# glm
+FetchContent_Declare(
+    glm
+    URL https://github.com/g-truc/glm/releases/download/1.0.1/glm-1.0.1-light.zip
+    URL_MD5 7d235d4813a2e7b1e10cc711b8e25213
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+FetchContent_MakeAvailable(glm)
+add_library(glm-hdr INTERFACE)
+target_include_directories(glm-hdr INTERFACE ${glm_SOURCE_DIR})
+
+add_executable(cpu_raytracing cpu_raytracing/raytracing.cpp)
+target_link_libraries(cpu_raytracing PRIVATE stb glm-hdr)
+target_compile_features(cpu_raytracing PUBLIC cxx_std_17)
+
 find_package(OpenCL)
 if(NOT OpenCL_FOUND)
     message(STATUS "OpenCL not found, disabling OpenCL targets")
