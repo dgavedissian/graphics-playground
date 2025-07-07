@@ -6,6 +6,7 @@
 #include <chrono>
 
 #include <glm.hpp>
+#include <gtc/epsilon.hpp>
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
@@ -84,16 +85,51 @@ private:
     vec3 direction_;
 };
 
+struct HitResult;
+
+class Material {
+public:
+    virtual ~Material() = default;
+
+    virtual bool scatter(const Ray& ray, const HitResult& result, color& attenuation, Ray& scattered) const {
+        return false;
+    }
+};
+
 struct HitResult {
     point3 point;
     vec3 normal;
     double t;
     bool front_face;
+    Material* material;
 
     void setNormal(const Ray& r, const vec3& outward_normal) {
         front_face = glm::dot(r.direction(), outward_normal) < 0;
         normal = front_face ? outward_normal : -outward_normal;
     }
+};
+
+
+class LambertianMaterial : public Material {
+public:
+    LambertianMaterial(color albedo) : albedo_(albedo) {}
+
+    bool scatter(const Ray& ray, const HitResult& result, color& attenuation, Ray& scattered) const override {
+        vec3 direction = result.normal + randomUnitVector();
+
+        // Prevent degenerate rays.
+        if (glm::all(glm::epsilonEqual(direction, vec3(0.0), 1e-8))) {
+            direction = result.normal;
+        }
+
+        scattered = Ray(result.point, direction);
+        attenuation = albedo_;
+        return true;
+    }
+
+private:
+    color albedo_;
+
 };
 
 class Hittable {
@@ -105,7 +141,12 @@ public:
 
 class Sphere : public Hittable {
 public:
-    Sphere(const point3& centre, double radius) : centre_(centre), radius_(std::fmax(0.0, radius)) {}
+    Sphere(const point3& centre, double radius, std::unique_ptr<Material> material) :
+        centre_(centre),
+        radius_(std::fmax(0.0, radius)),
+        material_(std::move(material))
+    {
+    }
 
     bool hit(const Ray& r, interval t, HitResult& result) const override {
         vec3 oc = centre_ - r.origin();
@@ -132,12 +173,15 @@ public:
         result.t = root;
         result.point = r.at(root);
         result.setNormal(r, (result.point - centre_) / radius_);
+        result.material = material_.get();
         return true;
     }
 
 private:
     point3 centre_;
     double radius_;
+    std::unique_ptr<Material> material_;
+
 };
 
 class Scene : public Hittable {
@@ -256,8 +300,12 @@ private:
 
         HitResult result;
         if (scene_.hit(r, interval(0.001, std::numeric_limits<double>::max()), result)) {
-            vec3 direction = result.normal + randomUnitVector();
-            return 0.5 * rayColour(Ray(result.point, direction), depth - 1);
+            Ray scattered{vec3(0.0), vec3(0.0)};
+            color attenuation;
+            if (result.material->scatter(r, result, attenuation, scattered)) {
+                return attenuation * rayColour(scattered, depth-1);
+            }
+            return color(0, 0, 0);
         }
         
         vec3 unitDirection = glm::normalize(r.direction());
@@ -275,10 +323,11 @@ int main() {
     const int samples = 10;
 
     Scene scene;
-    scene.add(std::make_unique<Sphere>(point3(0, 0, -1), 0.5));
-    scene.add(std::make_unique<Sphere>(point3(0, -100.5, -1), 100));
+    scene.add(std::make_unique<Sphere>(point3(0, -100.5, -1), 100, std::make_unique<LambertianMaterial>(color(0.5))));
+    scene.add(std::make_unique<Sphere>(point3(0, 0, -1), 0.5, std::make_unique<LambertianMaterial>(color(0.1, 0.2, 0.5))));
+    scene.add(std::make_unique<Sphere>(point3(1, -0.25, -1), 0.25, std::make_unique<LambertianMaterial>(color(1.0, 0.2, 0.5))));
 
-    Renderer renderer(scene, 960, 540, 10, samples, 2.0, point3(0, 0, 0));
+    Renderer renderer(scene, 960, 540, 10, samples, 2.0, point3(0, 0, 0.5));
 
     // Kick off rendering.
     auto startTime = std::chrono::system_clock::now();
