@@ -167,21 +167,26 @@ private:
     std::vector<std::unique_ptr<Hittable>> hittables_;
 };
 
-void writeColour(uint8_t* data, int x, int y, int width, const color& pixel_color) {
+double linearToGammaSpace(double value, double invGamma) {
+    return std::pow(value, invGamma);
+}
+
+void writeColour(uint8_t* data, int x, int y, int width, double invGamma, const color& pixelColour) {
     int offset = (x + y * width) * 3;
-    data[offset] = uint8_t(255 * pixel_color.x);
-    data[offset + 1] = uint8_t(255 * pixel_color.y);
-    data[offset + 2] = uint8_t(255 * pixel_color.z);
+    data[offset] = uint8_t(255 * linearToGammaSpace(pixelColour.r, invGamma));
+    data[offset + 1] = uint8_t(255 * linearToGammaSpace(pixelColour.g, invGamma));
+    data[offset + 2] = uint8_t(255 * linearToGammaSpace(pixelColour.b, invGamma));
 }
 
 class Renderer {
 public:
-    Renderer(const Scene& scene, int imageWidth, int imageHeight, int maxDepth, int samples, point3 cameraCentre) :
+    Renderer(const Scene& scene, int imageWidth, int imageHeight, int maxDepth, int samples, double gamma, point3 cameraCentre) :
         scene_(scene),
         imageWidth_(imageWidth),
         imageHeight_(imageHeight),
         maxDepth_(maxDepth),
         samples_(samples),
+        invGamma_(1.0 / gamma),
         cameraCentre_(cameraCentre)
     {
         auto focalLength = 1.0;
@@ -209,7 +214,7 @@ public:
             pixelColour += rayColour(getRay(x, y), maxDepth_);
         }
         pixelColour /= double(samples_);
-        writeColour(data, x, y, imageWidth_, pixelColour);
+        writeColour(data, x, y, imageWidth_, invGamma_, pixelColour);
     }
 
     int imageWidth() const { return imageWidth_; }
@@ -222,6 +227,7 @@ private:
     int imageHeight_;
     int maxDepth_;
     int samples_;
+    double invGamma_;
 
     point3 cameraCentre_;
 
@@ -272,7 +278,7 @@ int main() {
     scene.add(std::make_unique<Sphere>(point3(0, 0, -1), 0.5));
     scene.add(std::make_unique<Sphere>(point3(0, -100.5, -1), 100));
 
-    Renderer renderer(scene, 960, 540, 10, samples, point3(0, 0, 0));
+    Renderer renderer(scene, 960, 540, 10, samples, 2.0, point3(0, 0, 0));
 
     // Kick off rendering.
     auto startTime = std::chrono::system_clock::now();
