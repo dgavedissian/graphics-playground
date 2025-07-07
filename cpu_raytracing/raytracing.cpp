@@ -2,6 +2,8 @@
 #include <vector>
 #include <random>
 #include <thread>
+#include <iomanip>
+#include <chrono>
 
 #include <glm.hpp>
 
@@ -165,114 +167,162 @@ private:
     std::vector<std::unique_ptr<Hittable>> hittables_;
 };
 
-color rayColour(const Ray& r, int depth, const Scene& scene) {
-    if (depth == 0) {
-        // If we've run out of rays, then return no colour.
-        return color(0, 0, 0);
-    }
-
-    HitResult result;
-    if (scene.hit(r, interval(0.001, std::numeric_limits<double>::max()), result)) {
-        vec3 direction = result.normal + randomUnitVector();
-        return 0.5 * rayColour(Ray(result.point, direction), depth - 1, scene);
-    }
-    
-    vec3 unitDirection = glm::normalize(r.direction());
-    auto a = 0.5 * (unitDirection.y + 1.0);
-    return ((1.0 - a) * color(1.0, 1.0, 1.0)) + (a * color(0.5, 0.7, 1.0));
-}
-
 void writeColour(uint8_t* data, int x, int y, int width, const color& pixel_color) {
-    int offset = (x + (y * width)) * 3;
+    int offset = (x + y * width) * 3;
     data[offset] = uint8_t(255 * pixel_color.x);
     data[offset + 1] = uint8_t(255 * pixel_color.y);
     data[offset + 2] = uint8_t(255 * pixel_color.z);
 }
 
-int main() {
-    const int imageWidth = 960;
-    const int imageHeight = 540;
-    const int maxDepth = 5;
+class Renderer {
+public:
+    Renderer(const Scene& scene, int imageWidth, int imageHeight, int maxDepth, int samples, point3 cameraCentre) :
+        scene_(scene),
+        imageWidth_(imageWidth),
+        imageHeight_(imageHeight),
+        maxDepth_(maxDepth),
+        samples_(samples),
+        cameraCentre_(cameraCentre)
+    {
+        auto focalLength = 1.0;
+        auto viewportHeight = 2.0;
+        auto viewportWidth = viewportHeight * (double(imageWidth)/imageHeight);
 
-    // Scene
+        // Calculate the vectors across the horizontal and down the vertical viewport edges.
+        auto viewportU = vec3(viewportWidth, 0, 0);
+        auto viewportV = vec3(0, -viewportHeight, 0);
+
+        // Calculate the horizontal and vertical delta vectors from pixel to pixel.
+        pixelDeltaU_ = viewportU / double(imageWidth);
+        pixelDeltaV_ = viewportV / double(imageHeight);
+
+        // Calculate the location of the upper left pixel.
+        auto viewportUpperLeft = cameraCentre
+                                - vec3(0, 0, focalLength) - viewportU/2.0 - viewportV/2.0;
+        pixelUpperLeft_ = viewportUpperLeft + 0.5 * (pixelDeltaU_ + pixelDeltaV_);
+    }
+
+    void renderPixel(uint8_t* data, int x, int y, int width) {
+        auto pixelCentre = pixelUpperLeft_ + (double(x) * pixelDeltaU_) + (double(y) * pixelDeltaV_);
+        auto rayDirection = pixelCentre - cameraCentre_;
+
+        // Take the average of N samples for this pixel.
+        color finalColour = color(0, 0, 0);
+        for (int i = 0; i < samples_; ++i) {
+            finalColour += rayColour(Ray{cameraCentre_, rayDirection}, maxDepth_);
+        }
+        finalColour /= double(samples_);
+        writeColour(data, x, y, imageWidth_, finalColour);
+    }
+
+    int imageWidth() const { return imageWidth_; }
+    int imageHeight() const { return imageHeight_; }
+
+private:
+    const Scene& scene_;
+
+    int imageWidth_;
+    int imageHeight_;
+    int maxDepth_;
+    int samples_;
+
+    point3 cameraCentre_;
+
+    vec3 pixelUpperLeft_;
+    vec3 pixelDeltaU_;
+    vec3 pixelDeltaV_;
+
+    color rayColour(const Ray& r, int depth) {
+        if (depth == 0) {
+            // If we've run out of rays, then return no colour.
+            return color(0, 0, 0);
+        }
+
+        HitResult result;
+        if (scene_.hit(r, interval(0.001, std::numeric_limits<double>::max()), result)) {
+            vec3 direction = result.normal + randomUnitVector();
+            return 0.5 * rayColour(Ray(result.point, direction), depth - 1);
+        }
+        
+        vec3 unitDirection = glm::normalize(r.direction());
+        auto a = 0.5 * (unitDirection.y + 1.0);
+        return ((1.0 - a) * color(1.0, 1.0, 1.0)) + (a * color(0.5, 0.7, 1.0));
+    }
+};
+
+struct RenderJob {
+    int i, j;
+};
+
+int main() {
+    const int numWorkers = 8;
+    const int samples = 10;
+
     Scene scene;
     scene.add(std::make_unique<Sphere>(point3(0, 0, -1), 0.5));
     scene.add(std::make_unique<Sphere>(point3(0, -100.5, -1), 100));
 
-    // Camera
-    auto focalLength = 1.0;
-    auto viewportHeight = 2.0;
-    auto viewportWidth = viewportHeight * (double(imageWidth)/imageHeight);
-    auto cameraCentre = point3(0, 0, 0);
+    Renderer renderer(scene, 960, 540, 10, samples, point3(0, 0, 0));
 
-    // Calculate the vectors across the horizontal and down the vertical viewport edges.
-    auto viewportU = vec3(viewportWidth, 0, 0);
-    auto viewportV = vec3(0, -viewportHeight, 0);
+    // Kick off rendering.
+    auto startTime = std::chrono::system_clock::now();
 
-    // Calculate the horizontal and vertical delta vectors from pixel to pixel.
-    auto pixelDeltaU = viewportU / double(imageWidth);
-    auto pixelDeltaV = viewportV / double(imageHeight);
+    const int imageWidth = renderer.imageWidth();
+    const int imageHeight = renderer.imageHeight();
+    const int numPixels = imageWidth * imageHeight;
 
-    // Calculate the location of the upper left pixel.
-    auto viewportUpperLeft = cameraCentre
-                             - vec3(0, 0, focalLength) - viewportU/2.0 - viewportV/2.0;
-    auto pixelUpperLeft = viewportUpperLeft + 0.5 * (pixelDeltaU + pixelDeltaV);
-
-    const int samples = 10;
-
-    const int numWorkers = 16;
-
-    // Render.
     std::vector<uint8_t> pixels;
-    pixels.resize(imageWidth * imageHeight * 3);
+    pixels.resize(numPixels * 3);
     uint8_t* pixelData = pixels.data();
 
-    std::atomic_int scanlineCounter(imageHeight);
+    // Spawn workers.
     std::vector<std::thread> workers;
-
+    std::atomic<int> nextPixelIndex{0};
     for (int t = 0; t < numWorkers; ++t) {
-        // Divide the work into threads.
-        workers.emplace_back([&, t]() {
-            int numScanlines = imageHeight / numWorkers;
-            int start = numScanlines * t;
-            int end = (t == numWorkers - 1) ? imageHeight : start + numScanlines;
-            for (int j = start; j < end; j++) {
-                for (int i = 0; i < imageWidth; i++) {
-                    auto pixelCentre = pixelUpperLeft + (double(i) * pixelDeltaU) + (double(j) * pixelDeltaV);
-                    auto rayDirection = pixelCentre - cameraCentre;
+        workers.emplace_back([&]() {
+            while (true) {
+                auto pixelIndex = nextPixelIndex++;
 
-                    // Take the average of N samples for this pixel.
-                    color finalColour = color(0, 0, 0);
-                    for (int i = 0; i < samples; ++i) {
-                        finalColour += rayColour(Ray{cameraCentre, rayDirection}, maxDepth, scene);
-                    }
-                    finalColour /= double(samples);
-                    writeColour(pixelData, i, j, imageWidth, finalColour);
+                // Ran out of jobs, abort.
+                if (pixelIndex >= numPixels) {
+                    break;
                 }
-                scanlineCounter--;
+                
+                int x = pixelIndex % imageWidth;
+                int y = pixelIndex / imageWidth;
+                renderer.renderPixel(pixelData, x, y, imageWidth);
             }
         });
     }
     
-    // Kick off an additional worker thread that monitors the progress of the render.
-    workers.emplace_back([&]() {
-        int prevCounter = -1;
-        while (scanlineCounter > 0) {
-            if (scanlineCounter != prevCounter) {
-                std::clog << "\rScanlines remaining: " << scanlineCounter << ' ' << std::flush;
-            }
-            stbi_write_png("output.png", imageWidth, imageHeight, 3, pixels.data(), 0);
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-        }
-    });
+    // Monitor progress.
+    auto lastWritten = std::chrono::system_clock::now();
+    int totalPixels = imageWidth * imageHeight;
+    const int numBars = 50;
+    while (nextPixelIndex < numPixels) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        
+        float progress = float(nextPixelIndex) / totalPixels;
+        std::string bars = std::string(int(progress * numBars), '#') + std::string(int((1.0 - progress) * numBars), '.');
+        std::clog << "\rProgress: " << bars << " " << std::fixed << std::setprecision(1) << (progress * 100.0f) << "% " << std::flush;
 
+        // Periodically write the image.
+        auto now = std::chrono::system_clock::now();
+        if ((now - lastWritten) > std::chrono::milliseconds(500)) {
+            stbi_write_png("output.png", imageWidth, imageHeight, 3, pixels.data(), 0);
+            lastWritten = now;
+        }
+    }
+
+    // Wait for all workers to complete.
     for (auto& w : workers) {
         w.join();
     }
 
-    std::clog << std::endl << "Done" << std::endl;
+    auto duration = std::chrono::system_clock::now() - startTime;
+    std::clog << std::endl << "Done. Took " << std::fixed << std::setprecision(2) << std::chrono::duration_cast<std::chrono::duration<float>>(duration).count() << " seconds." << std::endl;
 
-    // Write the image to a file.
+    // Write the final image to a file.
     stbi_write_png("output.png", imageWidth, imageHeight, 3, pixels.data(), 0);
     return 0;
 }
