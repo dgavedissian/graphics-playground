@@ -64,9 +64,8 @@ inline vec3 randomUnitVector() {
     }
 }
 
-inline vec3 randomOnHemisphere(const vec3& normal) {
-    vec3 onUnitSphere = randomUnitVector();
-    return dot(onUnitSphere, normal) < 0.0 ? -onUnitSphere : onUnitSphere;
+inline vec3 reflect(const vec3& vec, const vec3& normal) {
+    return vec - 2.0 * glm::dot(vec, normal) * normal;
 }
 
 class Ray {
@@ -123,6 +122,22 @@ public:
         }
 
         scattered = Ray(result.point, direction);
+        attenuation = albedo_;
+        return true;
+    }
+
+private:
+    color albedo_;
+
+};
+
+class MetalMaterial : public Material {
+public:
+    MetalMaterial(color albedo) : albedo_(albedo) {}
+
+    bool scatter(const Ray& ray, const HitResult& result, color& attenuation, Ray& scattered) const override {
+        vec3 reflected = reflect(ray.direction(), result.normal);
+        scattered = Ray(result.point, reflected);
         attenuation = albedo_;
         return true;
     }
@@ -326,8 +341,9 @@ int main() {
     scene.add(std::make_unique<Sphere>(point3(0, -100.5, -1), 100, std::make_unique<LambertianMaterial>(color(0.5))));
     scene.add(std::make_unique<Sphere>(point3(0, 0, -1), 0.5, std::make_unique<LambertianMaterial>(color(0.1, 0.2, 0.5))));
     scene.add(std::make_unique<Sphere>(point3(1, -0.25, -1), 0.25, std::make_unique<LambertianMaterial>(color(1.0, 0.2, 0.5))));
+    scene.add(std::make_unique<Sphere>(point3(-1, -0.5 + 0.4, -1), 0.4, std::make_unique<MetalMaterial>(color(0.8))));
 
-    Renderer renderer(scene, 960, 540, 10, samples, 2.0, point3(0, 0, 0.5));
+    Renderer renderer(scene, 960, 540, 10, samples, 2.0, point3(0, 0, 0.25));
 
     // Kick off rendering.
     auto startTime = std::chrono::system_clock::now();
