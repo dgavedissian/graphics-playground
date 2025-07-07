@@ -44,8 +44,8 @@ struct interval {
 const interval interval::empty = interval(std::numeric_limits<double>::max(), std::numeric_limits<double>::min());
 
 inline double randomDouble() {
-    static std::uniform_real_distribution<double> distribution(0.0, 1.0);
-    static std::mt19937 generator;
+    thread_local std::uniform_real_distribution<double> distribution(0.0, 1.0);
+    thread_local std::mt19937 generator;
     return distribution(generator);
 }
 
@@ -128,17 +128,19 @@ private:
 
 class MetalMaterial : public Material {
 public:
-    MetalMaterial(color albedo) : albedo_(albedo) {}
+    MetalMaterial(color albedo, double fuzz) : albedo_(albedo), fuzz_(fuzz < 1 ? fuzz : 1) {}
 
     bool scatter(const Ray& ray, const HitResult& result, color& attenuation, Ray& scattered) const override {
         vec3 reflected = glm::reflect(ray.direction(), result.normal);
+        reflected = glm::normalize(reflected) + fuzz_ * randomUnitVector();
         scattered = Ray(result.point, reflected);
         attenuation = albedo_;
-        return true;
+        return glm::dot(reflected, result.normal) > 0;
     }
 
 private:
     color albedo_;
+    double fuzz_;
 
 };
 
@@ -329,14 +331,14 @@ struct RenderJob {
 };
 
 int main() {
-    const int numWorkers = 8;
+    const int numWorkers = std::max(1u, std::thread::hardware_concurrency() - 1);
     const int samples = 10;
 
     Scene scene;
     scene.add(std::make_unique<Sphere>(point3(0, -100.5, -1), 100, std::make_unique<LambertianMaterial>(color(0.5))));
     scene.add(std::make_unique<Sphere>(point3(0, 0, -1), 0.5, std::make_unique<LambertianMaterial>(color(0.1, 0.2, 0.5))));
     scene.add(std::make_unique<Sphere>(point3(1, -0.25, -1), 0.25, std::make_unique<LambertianMaterial>(color(1.0, 0.2, 0.5))));
-    scene.add(std::make_unique<Sphere>(point3(-1, -0.5 + 0.4, -1), 0.4, std::make_unique<MetalMaterial>(color(0.8))));
+    scene.add(std::make_unique<Sphere>(point3(-1, -0.5 + 0.4, -1), 0.4, std::make_unique<MetalMaterial>(color(0.8), 0.2)));
 
     Renderer renderer(scene, 960, 540, 10, samples, 2.0, point3(0, 0, 0.25));
 
@@ -346,6 +348,8 @@ int main() {
     const int imageWidth = renderer.imageWidth();
     const int imageHeight = renderer.imageHeight();
     const int numPixels = imageWidth * imageHeight;
+
+    std::clog << "Rendering " << imageWidth << "x" << imageHeight << " with " << numWorkers << " workers." << std::endl;
 
     std::vector<uint8_t> pixels;
     pixels.resize(numPixels * 3);
