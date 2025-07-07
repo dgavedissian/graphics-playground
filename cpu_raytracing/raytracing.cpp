@@ -50,22 +50,17 @@ inline double randomDouble() {
 }
 
 inline double randomDouble(double min, double max) {
-    // Returns a random real in [min,max).
-    return min + (max-min)*randomDouble();
+    return min + (max-min) * randomDouble();
 }
 
 inline vec3 randomUnitVector() {
     while (true) {
         auto p = vec3{randomDouble(-1, 1), randomDouble(-1, 1), randomDouble(-1, 1)};
         auto lengthSq = glm::dot(p, p);
-        if (1e-160 < lengthSq && lengthSq <= 1) {
+        if (1e-160 < lengthSq) {
             return p / sqrt(lengthSq);
         }
     }
-}
-
-inline vec3 reflect(const vec3& vec, const vec3& normal) {
-    return vec - 2.0 * glm::dot(vec, normal) * normal;
 }
 
 class Ray {
@@ -136,7 +131,7 @@ public:
     MetalMaterial(color albedo) : albedo_(albedo) {}
 
     bool scatter(const Ray& ray, const HitResult& result, color& attenuation, Ray& scattered) const override {
-        vec3 reflected = reflect(ray.direction(), result.normal);
+        vec3 reflected = glm::reflect(ray.direction(), result.normal);
         scattered = Ray(result.point, reflected);
         attenuation = albedo_;
         return true;
