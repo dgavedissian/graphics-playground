@@ -203,16 +203,13 @@ public:
     }
 
     void renderPixel(uint8_t* data, int x, int y, int width) {
-        auto pixelCentre = pixelUpperLeft_ + (double(x) * pixelDeltaU_) + (double(y) * pixelDeltaV_);
-        auto rayDirection = pixelCentre - cameraCentre_;
-
-        // Take the average of N samples for this pixel.
-        color finalColour = color(0, 0, 0);
+        // Take the average of N samples for this pixel, with slight random offsets for anti-aliasing.
+        color pixelColour = color(0, 0, 0);
         for (int i = 0; i < samples_; ++i) {
-            finalColour += rayColour(Ray{cameraCentre_, rayDirection}, maxDepth_);
+            pixelColour += rayColour(getRay(x, y), maxDepth_);
         }
-        finalColour /= double(samples_);
-        writeColour(data, x, y, imageWidth_, finalColour);
+        pixelColour /= double(samples_);
+        writeColour(data, x, y, imageWidth_, pixelColour);
     }
 
     int imageWidth() const { return imageWidth_; }
@@ -231,6 +228,19 @@ private:
     vec3 pixelUpperLeft_;
     vec3 pixelDeltaU_;
     vec3 pixelDeltaV_;
+
+    Ray getRay(int x, int y) {
+        // Returns the vector to a random point in the [-0.5, -0.5] - [+0.5, +0.5] unit square.
+        vec3 offset(randomDouble() - 0.5, randomDouble() - 0.5, 0);
+
+        auto pixelSample = pixelUpperLeft_ +
+            ((double(x) + offset.x) * pixelDeltaU_) +
+            ((double(y) + offset.y) * pixelDeltaV_);
+
+        auto rayDirection = pixelSample - cameraCentre_;
+
+        return Ray{cameraCentre_, rayDirection};
+    }
 
     color rayColour(const Ray& r, int depth) {
         if (depth == 0) {
