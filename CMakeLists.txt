@@ -25,9 +25,20 @@ FetchContent_MakeAvailable(glm)
 add_library(glm-hdr INTERFACE)
 target_include_directories(glm-hdr INTERFACE ${glm_SOURCE_DIR})
 
+# GLFW
+FetchContent_Declare(
+    glfw
+    URL https://github.com/glfw/glfw/releases/download/3.4/glfw-3.4.zip
+    URL_MD5 7d1e90c5c0011eb10eac280b6093d0d0
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+FetchContent_MakeAvailable(glfw)
+
+find_package(OpenGL REQUIRED)
+
 add_executable(raytracing raytracing/raytracing.cpp)
-target_link_libraries(raytracing PRIVATE stb glm-hdr)
-target_compile_features(raytracing PUBLIC cxx_std_17)
+target_link_libraries(raytracing PRIVATE stb glm-hdr glfw OpenGL::GL)
+target_compile_features(raytracing PUBLIC cxx_std_20)
 
 find_package(OpenCL)
 if(NOT OpenCL_FOUND)
