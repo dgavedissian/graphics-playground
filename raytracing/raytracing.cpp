@@ -381,32 +381,7 @@ private:
     }
 };
 
-int main() {
-    const int numWorkers = std::max(1u, std::thread::hardware_concurrency() - 1);
-    const int samples = 100;
-
-    Scene scene;
-    scene.add(std::make_unique<Sphere>(point3(0, -100.5, -1.25), 100, std::make_unique<LambertianMaterial>(color(0.5))));
-    scene.add(std::make_unique<Sphere>(point3(0, 0, -1.25), 0.5, std::make_unique<LambertianMaterial>(color(0.1, 0.2, 0.5))));
-    scene.add(std::make_unique<Sphere>(point3(1, -0.25, -1.25), 0.25, std::make_unique<GlassMaterial>(1.5)));
-    scene.add(std::make_unique<Sphere>(point3(-1, -0.5 + 0.4, -1.25), 0.4, std::make_unique<MetalMaterial>(color(0.8), 0.2)));
-
-    Renderer renderer(scene, 960, 540, 10, samples, 2.0, point3(0, 0, 0));
-    renderer.setCamera(point3(-2, 2, 1), point3(0, 0, -1), vec3(0, 1, 0), 60.0);
-
-    // Kick off rendering.
-    auto startTime = std::chrono::system_clock::now();
-
-    const int imageWidth = renderer.imageWidth();
-    const int imageHeight = renderer.imageHeight();
-    const int numPixels = imageWidth * imageHeight;
-
-    std::clog << "Rendering " << imageWidth << "x" << imageHeight << " with " << numWorkers << " workers." << std::endl;
-
-    std::vector<uint8_t> pixels;
-    pixels.resize(numPixels * 3);
-    uint8_t* pixelData = pixels.data();
-
+void renderImage(Renderer& renderer, uint8_t* pixelData, int numPixels, int numWorkers, int imageWidth) {
     // Spawn workers.
     std::vector<std::thread> workers;
     std::atomic<int> nextPixelIndex{0};
@@ -429,27 +404,48 @@ int main() {
     
     // Monitor progress.
     auto lastWritten = std::chrono::system_clock::now();
-    int totalPixels = imageWidth * imageHeight;
     const int numBars = 50;
     while (nextPixelIndex < numPixels) {
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
-        float progress = float(nextPixelIndex) / totalPixels;
+        float progress = float(nextPixelIndex) / numPixels;
         std::string bars = std::string(int(progress * numBars), '#') + std::string(int((1.0 - progress) * numBars), '.');
         std::clog << "\rProgress: " << bars << " " << std::fixed << std::setprecision(1) << (progress * 100.0f) << "% " << std::flush;
-
-        // Periodically write the image.
-        auto now = std::chrono::system_clock::now();
-        if ((now - lastWritten) > std::chrono::milliseconds(500)) {
-            stbi_write_png("output.png", imageWidth, imageHeight, 3, pixels.data(), 0);
-            lastWritten = now;
-        }
     }
 
     // Wait for all workers to complete.
     for (auto& w : workers) {
         w.join();
     }
+}
+
+int main() {
+    const int numWorkers = std::max(1u, std::thread::hardware_concurrency() - 1);
+    const int samples = 20;
+
+    Scene scene;
+    scene.add(std::make_unique<Sphere>(point3(0, -100.5, -1.25), 100, std::make_unique<LambertianMaterial>(color(0.5))));
+    scene.add(std::make_unique<Sphere>(point3(0, 0, -1.25), 0.5, std::make_unique<LambertianMaterial>(color(0.1, 0.2, 0.5))));
+    scene.add(std::make_unique<Sphere>(point3(1, -0.25, -1.25), 0.25, std::make_unique<GlassMaterial>(1.5)));
+    scene.add(std::make_unique<Sphere>(point3(-1, -0.5 + 0.4, -1.25), 0.4, std::make_unique<MetalMaterial>(color(0.8), 0.2)));
+
+    Renderer renderer(scene, 960, 540, 10, samples, 2.0, point3(0, 0, 0));
+    renderer.setCamera(point3(-2, 2, 1), point3(0, 0, -1), vec3(0, 1, 0), 60.0);
+
+    // Kick off rendering.
+    auto startTime = std::chrono::system_clock::now();
+
+    const int imageWidth = renderer.imageWidth();
+    const int imageHeight = renderer.imageHeight();
+    const int numPixels = imageWidth * imageHeight;
+
+    std::vector<uint8_t> pixels;
+    pixels.resize(numPixels * 3);
+    uint8_t* pixelData = pixels.data();
+
+    std::clog << "Rendering " << imageWidth << "x" << imageHeight << " with " << numWorkers << " workers." << std::endl;
+
+    renderImage(renderer, pixels.data(), numPixels, numWorkers, imageWidth);
 
     auto duration = std::chrono::system_clock::now() - startTime;
     std::clog << std::endl << "Done. Took " << std::fixed << std::setprecision(2) << std::chrono::duration_cast<std::chrono::duration<float>>(duration).count() << " seconds." << std::endl;

@@ -25,9 +25,9 @@ FetchContent_MakeAvailable(glm)
 add_library(glm-hdr INTERFACE)
 target_include_directories(glm-hdr INTERFACE ${glm_SOURCE_DIR})
 
-add_executable(cpu_raytracing cpu_raytracing/raytracing.cpp)
-target_link_libraries(cpu_raytracing PRIVATE stb glm-hdr)
-target_compile_features(cpu_raytracing PUBLIC cxx_std_17)
+add_executable(raytracing raytracing/raytracing.cpp)
+target_link_libraries(raytracing PRIVATE stb glm-hdr)
+target_compile_features(raytracing PUBLIC cxx_std_17)
 
 find_package(OpenCL)
 if(NOT OpenCL_FOUND)
