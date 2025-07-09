@@ -13,110 +13,7 @@
 #include <GLFW/glfw3.h>
 
 #include "math.h"
-
-struct HitResult;
-
-class Material {
-public:
-    virtual ~Material() = default;
-
-    virtual bool scatter(const Ray& ray, const HitResult& result, color& attenuation, Ray& scattered) const {
-        return false;
-    }
-};
-
-struct HitResult {
-    vec3 point;
-    vec3 normal;
-    double t;
-    bool front_face;
-    Material* material;
-
-    void setNormal(const Ray& r, const vec3& outward_normal) {
-        front_face = glm::dot(r.direction(), outward_normal) < 0;
-        normal = front_face ? outward_normal : -outward_normal;
-    }
-};
-
-
-class LambertianMaterial : public Material {
-public:
-    LambertianMaterial(color albedo) : albedo_(albedo) {}
-
-    bool scatter(const Ray& ray, const HitResult& result, color& attenuation, Ray& scattered) const override {
-        vec3 direction = result.normal + randomUnitVector();
-
-        // Prevent degenerate rays.
-        if (glm::all(glm::epsilonEqual(direction, vec3(0.0), 1e-8))) {
-            direction = result.normal;
-        }
-
-        scattered = Ray(result.point, direction);
-        attenuation = albedo_;
-        return true;
-    }
-
-private:
-    color albedo_;
-
-};
-
-class MetalMaterial : public Material {
-public:
-    MetalMaterial(color albedo, double fuzz) : albedo_(albedo), fuzz_(fuzz < 1 ? fuzz : 1) {}
-
-    bool scatter(const Ray& ray, const HitResult& result, color& attenuation, Ray& scattered) const override {
-        vec3 reflected = glm::reflect(ray.direction(), result.normal);
-        reflected = glm::normalize(reflected) + fuzz_ * randomUnitVector();
-        scattered = Ray(result.point, reflected);
-        attenuation = albedo_;
-        return glm::dot(reflected, result.normal) > 0;
-    }
-
-private:
-    color albedo_;
-    double fuzz_;
-
-};
-
-class GlassMaterial : public Material {
-public:
-    GlassMaterial(double refractionIndex) : refractionIndex_(refractionIndex) {}
-
-    bool scatter(const Ray& ray, const HitResult& result, color& attenuation, Ray& scattered) const override {
-        attenuation = color(1.0);
-
-        double ri = result.front_face ? (1.0 / refractionIndex_) : refractionIndex_;
-
-        vec3 unit_direction = glm::normalize(ray.direction());
-
-        double cos_theta = std::fmin(glm::dot(-unit_direction, result.normal), 1.0);
-        double sin_theta = std::sqrt(1.0 - cos_theta*cos_theta);
-
-        bool cannot_refract = ri * sin_theta > 1.0;
-
-        vec3 direction;
-        if (cannot_refract || reflectance(cos_theta, ri) > randomDouble()) {
-            direction = glm::reflect(unit_direction, result.normal);
-        } else {
-            direction = glm::refract(unit_direction, result.normal, ri);
-        }
-
-        scattered = Ray{result.point, direction};
-        return true;
-    }
-
-private:
-    double refractionIndex_;
-    
-    static double reflectance(double cosine, double refractionIndex) {
-        // Use Schlick's approximation for reflectance.
-        auto r0 = (1 - refractionIndex) / (1 + refractionIndex);
-        r0 *= r0;
-        return r0 + (1 - r0) * std::pow(1 - cosine, 5);
-    }
-};
-
+#include "material.h"
 class Hittable {
 public:
     virtual ~Hittable() = default;
@@ -393,9 +290,9 @@ public:
 
     void writeColour(uint8_t* data, int x, int y, int width, double invGamma, const color& pixelColour) {
         int offset = (x + y * width) * 3;
-        data[offset] = uint8_t(255 * linearToGammaSpace(pixelColour.r, invGamma));
-        data[offset + 1] = uint8_t(255 * linearToGammaSpace(pixelColour.g, invGamma));
-        data[offset + 2] = uint8_t(255 * linearToGammaSpace(pixelColour.b, invGamma));
+        data[offset] = uint8_t(255 * linearToGammaSpace(glm::clamp(pixelColour.r, 0.0, 1.0), invGamma));
+        data[offset + 1] = uint8_t(255 * linearToGammaSpace(glm::clamp(pixelColour.g, 0.0, 1.0), invGamma));
+        data[offset + 2] = uint8_t(255 * linearToGammaSpace(glm::clamp(pixelColour.b, 0.0, 1.0), invGamma));
     }
 
 private:
@@ -432,19 +329,26 @@ private:
             return color(0, 0, 0);
         }
 
+        // Perform ray test.
         HitResult result;
-        if (scene_.hit(r, interval(0.001, std::numeric_limits<double>::max()), result)) {
-            Ray scattered{vec3(0.0), vec3(0.0)};
-            color attenuation;
-            if (result.material->scatter(r, result, attenuation, scattered)) {
-                return attenuation * rayColour(scattered, depth-1);
-            }
-            return color(0, 0, 0);
+        bool hit = scene_.hit(r, interval(0.001, std::numeric_limits<double>::max()), result);
+
+        if (!hit) {
+            return color(0.05, 0.1, 0.2);
+            // Return the background colour.
+            // vec3 unitDirection = glm::normalize(r.direction());
+            // auto a = 0.5 * (unitDirection.y + 1.0);
+            // return ((1.0 - a) * color(1.0, 1.0, 1.0)) + (a * color(0.5, 0.7, 1.0));
         }
 
-        vec3 unitDirection = glm::normalize(r.direction());
-        auto a = 0.5 * (unitDirection.y + 1.0);
-        return ((1.0 - a) * color(1.0, 1.0, 1.0)) + (a * color(0.5, 0.7, 1.0));
+        Ray scattered{vec3(0.0), vec3(0.0)};
+        color attenuation;
+        color emission = result.material->emitted(result.point);
+
+        if (result.material->scatter(r, result, attenuation, scattered)) {
+            return emission + attenuation * rayColour(scattered, depth-1);
+        }
+        return emission;
     }
 
     Ray getRay(int x, int y) {
@@ -593,7 +497,7 @@ private:
 
 int main() {
     const int numWorkers = std::max(1u, std::thread::hardware_concurrency() - 1);
-    const int samples = 2;
+    const int samples = 10;
 
     Scene scene;
     scene.add(std::make_unique<Sphere>(vec3(0, -1000, 0), 1000, std::make_unique<LambertianMaterial>(color(0.5))));
@@ -601,14 +505,14 @@ int main() {
     // scene.add(std::make_unique<Sphere>(vec3(1, -0.25, -1.25), 0.25, std::make_unique<LambertianMaterial>(color(0.1, 0.2, 0.5))));
     // scene.add(std::make_unique<Sphere>(vec3(-1, -0.5 + 0.4, -1.25), 0.4, std::make_unique<MetalMaterial>(color(0.8), 0.2)));
 
-    const int size = 20;
+    const int size = 10;
     for (int x = -size; x <= size; ++x) {
         for (int y = -size; y <= size; ++y) {
-            auto size = randomDouble(0.1, 0.3);
+            auto size = randomDouble(0.15, 0.3);
             vec3 centre{x + 0.9 * randomDouble(), size, y + 0.9 * randomDouble()};
 
             std::unique_ptr<Material> material;
-            switch (randomInt(0, 2)) {
+            switch (randomInt(0, 3)) {
             case 0: {
                 material = std::make_unique<LambertianMaterial>(randomVec3() * randomVec3());
                 break;
@@ -626,6 +530,8 @@ int main() {
             scene.add(std::make_unique<Sphere>(centre, size, std::move(material)));
         }
     }
+
+    scene.add(std::make_unique<Sphere>(vec3(3, 5, 0), 2, std::make_unique<LightMaterial>(color(3))));
 
     auto bvh_tree = scene.generateBVHTree();
 
