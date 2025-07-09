@@ -12,73 +12,7 @@
 #include "glad/gl.h"
 #include <GLFW/glfw3.h>
 
-using color = glm::dvec3;
-using point3 = glm::dvec3;
-using vec3 = glm::dvec3;
-
-struct interval {
-    double min;
-    double max;
-
-    interval() : min(std::numeric_limits<double>::min()), max(std::numeric_limits<double>::max()) {}
-    interval(double min_val, double max_val) : min(min_val), max(max_val) {}
-
-    double length() const {
-        return max - min;
-    }
-
-    bool contains(double value) const {
-        return value >= min && value <= max;
-    }
-    
-    bool surrounds(double value) const {
-        return value > min && value < max;
-    }
-
-    double clamp(double x) const {
-        return (x < min) ? min : (x > max) ? max : x;
-    }
-
-    static const interval empty;
-};
-
-const interval interval::empty = interval(std::numeric_limits<double>::max(), std::numeric_limits<double>::min());
-
-inline double randomDouble() {
-    thread_local std::uniform_real_distribution<double> distribution(0.0, 1.0);
-    thread_local std::mt19937 generator;
-    return distribution(generator);
-}
-
-inline double randomDouble(double min, double max) {
-    return min + (max-min) * randomDouble();
-}
-
-inline vec3 randomUnitVector() {
-    while (true) {
-        auto p = vec3{randomDouble(-1, 1), randomDouble(-1, 1), randomDouble(-1, 1)};
-        auto lengthSq = glm::dot(p, p);
-        if (1e-160 < lengthSq) {
-            return p / sqrt(lengthSq);
-        }
-    }
-}
-
-class Ray {
-public:
-    Ray(const vec3& origin, const vec3& direction) : origin_(origin), direction_(direction) {}
-
-    const vec3& origin() const { return origin_; }
-    const vec3& direction() const { return direction_; }
-
-    point3 at(double t) const {
-        return origin_ + t * direction_;
-    } 
-
-private:
-    vec3 origin_;
-    vec3 direction_;
-};
+#include "math.h"
 
 struct HitResult;
 
@@ -92,7 +26,7 @@ public:
 };
 
 struct HitResult {
-    point3 point;
+    vec3 point;
     vec3 normal;
     double t;
     bool front_face;
@@ -188,15 +122,19 @@ public:
     virtual ~Hittable() = default;
 
     virtual bool hit(const Ray& r, interval t, HitResult& result) const = 0;
+
+    virtual AABB boundingBox() const = 0;
 };
 
 class Sphere : public Hittable {
 public:
-    Sphere(const point3& centre, double radius, std::unique_ptr<Material> material) :
+    Sphere(const vec3& centre, double radius, std::unique_ptr<Material> material) :
         centre_(centre),
         radius_(std::fmax(0.0, radius)),
         material_(std::move(material))
     {
+        auto rvec = vec3(radius);
+        bbox_ = AABB(centre - rvec, centre + rvec);
     }
 
     bool hit(const Ray& r, interval t, HitResult& result) const override {
@@ -228,16 +166,112 @@ public:
         return true;
     }
 
+    AABB boundingBox() const override { return bbox_; }
+
 private:
-    point3 centre_;
+    vec3 centre_;
     double radius_;
     std::unique_ptr<Material> material_;
+
+    AABB bbox_;
+
+};
+
+class BVHNode : public Hittable {
+  public:
+    BVHNode(std::vector<Hittable*>& objects, std::vector<std::unique_ptr<BVHNode>>& nodes, size_t start, size_t end) {
+        // Build the bounding box of the span of source objects.
+        bbox_ = objects[start]->boundingBox();
+        for (size_t i = start + 1; i < end; i++) {
+            bbox_ = AABB(bbox_, objects[i]->boundingBox());
+        }
+
+        int axis = bbox_.longestAxis();
+
+        auto comparator = (axis == 0) ? boxXCompare : ((axis == 1) ? boxYCompare : boxZCompare);
+        size_t objectSpan = end - start;
+
+        if (objectSpan == 1) {
+            left_ = right_ = objects[start];
+        } else if (objectSpan == 2) {
+            left_ = objects[start];
+            right_ = objects[start + 1];
+        } else {
+            std::sort(std::begin(objects) + start, std::begin(objects) + end, comparator);
+
+            auto mid = start + objectSpan / 2;
+            auto left = std::make_unique<BVHNode>(objects, nodes, start, mid);
+            auto right = std::make_unique<BVHNode>(objects, nodes, mid, end);
+            left_ = left.get();
+            right_ = right.get();
+            nodes.push_back(std::move(left));
+            nodes.push_back(std::move(right));
+        }
+    }
+
+    bool hit(const Ray& r, interval t, HitResult& result) const override {
+        if (!bbox_.hit(r, t)) {
+            return false;
+        }
+
+        bool hitLeft = left_->hit(r, t, result);
+        bool hitRight = right_->hit(r, interval(t.min, hitLeft ? result.t : t.max), result);
+
+        return hitLeft || hitRight;
+    }
+
+    AABB boundingBox() const override { return bbox_; }
+
+  private:
+    Hittable* left_;
+    Hittable* right_;
+    AABB bbox_;
+
+    static bool boxCompare(const Hittable* a, const Hittable* b, int axisIndex) {
+        auto aAxisInterval = a->boundingBox().axisInterval(axisIndex);
+        auto bAxisInterval = b->boundingBox().axisInterval(axisIndex);
+        return aAxisInterval.min < bAxisInterval.min;
+    }
+
+    static bool boxXCompare(const Hittable* a, const Hittable* b) {
+        return boxCompare(a, b, 0);
+    }
+
+    static bool boxYCompare(const Hittable* a, const Hittable* b) {
+        return boxCompare(a, b, 1);
+    }
+
+    static bool boxZCompare(const Hittable* a, const Hittable* b) {
+        return boxCompare(a, b, 2);
+    }
+};
+
+class BVHTree : public Hittable {
+public:
+    BVHTree(std::unique_ptr<BVHNode> root, std::vector<std::unique_ptr<BVHNode>> storage) :
+        root_(std::move(root)),
+        storage_(std::move(storage))
+    {
+    }
+
+    bool hit(const Ray& r, interval t, HitResult& result) const override {
+        return root_->hit(r, t, result);
+    }
+
+    AABB boundingBox() const override {
+        return root_->boundingBox();
+    }
+
+private:
+    std::unique_ptr<BVHNode> root_;
+    std::vector<std::unique_ptr<BVHNode>> storage_;
 
 };
 
 class Scene : public Hittable {
 public:
     void add(std::unique_ptr<Hittable> hittable) {
+        bbox_ = AABB(bbox_, hittable->boundingBox());
         hittables_.emplace_back(std::move(hittable));
     }
 
@@ -258,13 +292,29 @@ public:
         return hitAnything;
     }
 
+    AABB boundingBox() const override { return bbox_; }
+
+    std::unique_ptr<BVHTree> generateBVHTree() const {
+        std::vector<Hittable*> hittables;
+        std::transform(
+            hittables_.begin(), hittables_.end(),
+            std::back_inserter(hittables),
+            [](const auto& p) { return p.get(); }
+        );
+
+        std::vector<std::unique_ptr<BVHNode>> nodes;
+        auto root = std::make_unique<BVHNode>(hittables, nodes, 0, hittables.size());
+        return std::make_unique<BVHTree>(std::move(root), std::move(nodes));
+    }
+
 private:
     std::vector<std::unique_ptr<Hittable>> hittables_;
+    AABB bbox_;
 };
 
 class Renderer {
 public:
-    Renderer(const Scene& scene, int imageWidth, int imageHeight, int maxDepth, int samples, double gamma, point3 cameraCentre) :
+    Renderer(const Hittable& scene, int imageWidth, int imageHeight, int maxDepth, int samples, double gamma, vec3 cameraCentre) :
         scene_(scene),
         imageWidth_(imageWidth),
         imageHeight_(imageHeight),
@@ -272,13 +322,13 @@ public:
         samples_(samples),
         invGamma_(1.0 / gamma)
     {
-        setCamera(cameraCentre, point3(0, 0, -1), vec3(0, 1, 0), 90.0);
+        setCamera(cameraCentre, vec3(0, 0, -1), vec3(0, 1, 0), 90.0);
     }
 
     int imageWidth() const { return imageWidth_; }
     int imageHeight() const { return imageHeight_; }
 
-    void setCamera(point3 lookfrom, point3 lookat, vec3 vup, double fovDegrees) {
+    void setCamera(vec3 lookfrom, vec3 lookat, vec3 vup, double fovDegrees) {
         lookfrom_ = lookfrom;
         lookat_ = lookat;
         vup_ = vup;
@@ -349,7 +399,7 @@ public:
     }
 
 private:
-    const Scene& scene_;
+    const Hittable& scene_;
 
     int imageWidth_;
     int imageHeight_;
@@ -361,8 +411,8 @@ private:
     vec3 pixelDeltaU_;
     vec3 pixelDeltaV_;
     
-    point3 lookfrom_;
-    point3 lookat_;
+    vec3 lookfrom_;
+    vec3 lookat_;
     vec3 vup_;
     double fovDegrees_;
 
@@ -543,18 +593,46 @@ private:
 
 int main() {
     const int numWorkers = std::max(1u, std::thread::hardware_concurrency() - 1);
-    const int samples = 10;
+    const int samples = 2;
 
     Scene scene;
-    scene.add(std::make_unique<Sphere>(point3(0, -100.5, -1.25), 100, std::make_unique<LambertianMaterial>(color(0.5))));
-    scene.add(std::make_unique<Sphere>(point3(0, 0, -1.25), 0.5, std::make_unique<GlassMaterial>(1.5)));
-    scene.add(std::make_unique<Sphere>(point3(1, -0.25, -1.25), 0.25, std::make_unique<LambertianMaterial>(color(0.1, 0.2, 0.5))));
-    scene.add(std::make_unique<Sphere>(point3(-1, -0.5 + 0.4, -1.25), 0.4, std::make_unique<MetalMaterial>(color(0.8), 0.2)));
+    scene.add(std::make_unique<Sphere>(vec3(0, -1000, 0), 1000, std::make_unique<LambertianMaterial>(color(0.5))));
+    // scene.add(std::make_unique<Sphere>(vec3(0, 0, -1.25), 0.5, std::make_unique<GlassMaterial>(1.5)));
+    // scene.add(std::make_unique<Sphere>(vec3(1, -0.25, -1.25), 0.25, std::make_unique<LambertianMaterial>(color(0.1, 0.2, 0.5))));
+    // scene.add(std::make_unique<Sphere>(vec3(-1, -0.5 + 0.4, -1.25), 0.4, std::make_unique<MetalMaterial>(color(0.8), 0.2)));
+
+    const int size = 20;
+    for (int x = -size; x <= size; ++x) {
+        for (int y = -size; y <= size; ++y) {
+            auto size = randomDouble(0.1, 0.3);
+            vec3 centre{x + 0.9 * randomDouble(), size, y + 0.9 * randomDouble()};
+
+            std::unique_ptr<Material> material;
+            switch (randomInt(0, 2)) {
+            case 0: {
+                material = std::make_unique<LambertianMaterial>(randomVec3() * randomVec3());
+                break;
+            }
+            case 1: {
+                auto albedo = randomVec3(0.5, 1);
+                auto fuzz = randomDouble(0, 0.5);
+                material = std::make_unique<MetalMaterial>(albedo, fuzz);
+                break;
+            }
+            case 2:
+                material = std::make_unique<GlassMaterial>(1.5);
+                break;
+            }
+            scene.add(std::make_unique<Sphere>(centre, size, std::move(material)));
+        }
+    }
+
+    auto bvh_tree = scene.generateBVHTree();
 
     const int imageWidth = 960;
     const int imageHeight = 540;
 
-    Renderer renderer(scene, imageWidth, imageHeight, 10, samples, 2.0, point3(0, 0, 0));
+    Renderer renderer(*bvh_tree, imageWidth, imageHeight, 10, samples, 2.0, vec3(0, 0, 0));
     Window window(imageWidth, imageHeight, "Raytracing");
 
     const int numPixels = imageWidth * imageHeight;
@@ -568,7 +646,7 @@ int main() {
                 std::chrono::system_clock::now() - start
             ).count();
 
-        renderer.setCamera(point3(std::sin(elapsed) * 2, 1, std::cos(elapsed) * 2), point3(0, 0, -1), vec3(0, 1, 0), 60.0);
+        renderer.setCamera(vec3(std::sin(elapsed * 0.5) * 4, 1.5, std::cos(elapsed * 0.5) * 4 - 1.0), vec3(0, 0.5, -1), vec3(0, 1, 0), 60.0);
         renderer.renderImage(numWorkers, pixelData);
         window.updateTexture(pixelData);
 
