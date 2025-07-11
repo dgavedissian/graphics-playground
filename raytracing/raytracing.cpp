@@ -145,7 +145,7 @@ private:
             return Vec3(0.4, 0.6, 0.9);
         }
 
-        Ray scattered{Vec3(0.0), Vec3(0.0)};
+        Ray scattered;
         Vec3 attenuation;
         Vec3 emission = result.material->emitted(result.point);
 
@@ -163,7 +163,7 @@ private:
             ((double(x) + offset.x) * pixelDeltaU_) +
             ((double(y) + offset.y) * pixelDeltaV_);
 
-        auto rayDirection = pixelSample - lookfrom_;
+        auto rayDirection = glm::normalize(pixelSample - lookfrom_);
 
         return Ray{lookfrom_, rayDirection};
     }

@@ -2,24 +2,6 @@
 
 #include "hittable.h"
 
-static bool boxCompare(const Hittable* a, const Hittable* b, int axisIndex) {
-    auto aAxisInterval = a->boundingBox().axisInterval(axisIndex);
-    auto bAxisInterval = b->boundingBox().axisInterval(axisIndex);
-    return aAxisInterval.min < bAxisInterval.min;
-}
-
-static bool boxXCompare(const Hittable* a, const Hittable* b) {
-    return boxCompare(a, b, 0);
-}
-
-static bool boxYCompare(const Hittable* a, const Hittable* b) {
-    return boxCompare(a, b, 1);
-}
-
-static bool boxZCompare(const Hittable* a, const Hittable* b) {
-    return boxCompare(a, b, 2);
-}
-
 using HittableList = std::vector<Hittable*>;
 
 struct BVHNode {
@@ -39,7 +21,10 @@ std::unique_ptr<BVHNode> createNode(HittableList& objects, size_t start, size_t 
     }
 
     int axis = bbox.longestAxis();
-    auto comparator = (axis == 0) ? boxXCompare : ((axis == 1) ? boxYCompare : boxZCompare);
+    auto comparator = [axis](const Hittable* a, const Hittable* b) {
+        return a->boundingBox().min[axis] < b->boundingBox().min[axis];
+    };
+    
     size_t objectSpan = end - start;
 
     if (objectSpan == 1) {

@@ -21,15 +21,14 @@ struct HitResult {
     Vec3 point;
     Vec3 normal;
     double t;
-    bool front_face;
+    bool frontFace;
     Material* material;
 
-    void setNormal(const Ray& r, const Vec3& outward_normal) {
-        front_face = glm::dot(r.direction(), outward_normal) < 0;
-        normal = front_face ? outward_normal : -outward_normal;
+    void setNormal(const Ray& r, const Vec3& outwardNormal) {
+        frontFace = glm::dot(r.direction(), outwardNormal) < 0;
+        normal = frontFace ? outwardNormal : -outwardNormal;
     }
 };
-
 
 class LambertianMaterial : public Material {
 public:
@@ -43,7 +42,7 @@ public:
             direction = result.normal;
         }
 
-        scattered = Ray(result.point, direction);
+        scattered = Ray(result.point, glm::normalize(direction));
         attenuation = albedo_;
         return true;
     }
@@ -60,7 +59,7 @@ public:
     bool scatter(const Ray& ray, const HitResult& result, Vec3& attenuation, Ray& scattered) const override {
         Vec3 reflected = glm::reflect(ray.direction(), result.normal);
         reflected = glm::normalize(reflected) + fuzz_ * randomUnitVector();
-        scattered = Ray(result.point, reflected);
+        scattered = Ray(result.point, glm::normalize(reflected));
         attenuation = albedo_;
         return glm::dot(reflected, result.normal) > 0;
     }
@@ -78,7 +77,7 @@ public:
     bool scatter(const Ray& ray, const HitResult& result, Vec3& attenuation, Ray& scattered) const override {
         attenuation = Vec3(1.0);
 
-        double ri = result.front_face ? (1.0 / refractionIndex_) : refractionIndex_;
+        double ri = result.frontFace ? (1.0 / refractionIndex_) : refractionIndex_;
 
         Vec3 unit_direction = glm::normalize(ray.direction());
 
@@ -94,7 +93,7 @@ public:
             direction = glm::refract(unit_direction, result.normal, ri);
         }
 
-        scattered = Ray{result.point, direction};
+        scattered = Ray{result.point, glm::normalize(direction)};
         return true;
     }
 

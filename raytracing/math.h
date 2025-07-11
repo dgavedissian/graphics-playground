@@ -7,10 +7,19 @@ using Vec3 = glm::dvec3;
 
 class Ray {
 public:
-    Ray(const Vec3& origin, const Vec3& direction) : origin_(origin), direction_(direction) {}
+    Ray() = default;
+    Ray(const Vec3& origin, const Vec3& direction) :
+        origin_(origin),
+        direction_(direction),
+        invDirection_(1.0 / direction),
+        originMulInvDir_(origin / direction)
+    {
+    }
 
     const Vec3& origin() const { return origin_; }
     const Vec3& direction() const { return direction_; }
+    const Vec3& invDirection() const { return invDirection_; }
+    const Vec3& originMulInvDir() const { return originMulInvDir_; }
 
     Vec3 at(double t) const {
         return origin_ + t * direction_;
@@ -19,6 +28,9 @@ public:
 private:
     Vec3 origin_;
     Vec3 direction_;
+    Vec3 invDirection_;
+    Vec3 originMulInvDir_;
+
 };
 
 struct Interval {
@@ -62,66 +74,38 @@ const Interval Interval::empty = Interval(std::numeric_limits<double>::max(), st
 
 class AABB {
 public:
-    Interval x, y, z;
+    Vec3 min, max;
 
-    AABB() {}
+    AABB() = default;
 
     AABB(const Interval& x, const Interval& y, const Interval& z)
-      : x(x), y(y), z(z) {}
+      : min(x.min, y.min, z.min), max(x.max, y.max, z.max) {}
 
     AABB(const Vec3& a, const Vec3& b) {
         // Treat the two points a and b as extrema for the bounding box, so we don't require a
         // particular minimum/maximum coordinate order.
-
-        x = (a[0] <= b[0]) ? Interval(a[0], b[0]) : Interval(b[0], a[0]);
-        y = (a[1] <= b[1]) ? Interval(a[1], b[1]) : Interval(b[1], a[1]);
-        z = (a[2] <= b[2]) ? Interval(a[2], b[2]) : Interval(b[2], a[2]);
+        min = glm::min(a, b);
+        max = glm::max(a, b);
     }
 
     AABB(const AABB& box0, const AABB& box1) {
-        x = Interval(box0.x, box1.x);
-        y = Interval(box0.y, box1.y);
-        z = Interval(box0.z, box1.z);
-    }
-
-    const Interval& axisInterval(int n) const {
-        switch (n) {
-        case 1:
-            return y;
-        case 2:
-            return z;
-        default:
-            return x;
-        }
+        min = glm::min(box0.min, box1.min);
+        max = glm::max(box0.max, box1.max);
     }
 
     bool hit(const Ray& r, Interval rayT) const {
-        const Vec3& rayOrigin = r.origin();
-        const Vec3& rayDir = r.direction();
+        const Vec3& invRayDir = r.invDirection();
+        const Vec3& rayOrigMulInv = r.originMulInvDir();
 
         for (int axis = 0; axis < 3; axis++) {
-            const Interval& ax = axisInterval(axis);
-            const double adinv = 1.0 / rayDir[axis];
+            auto t0 = std::fma(min[axis], invRayDir[axis], -rayOrigMulInv[axis]);
+            auto t1 = std::fma(max[axis], invRayDir[axis], -rayOrigMulInv[axis]);
 
-            auto t0 = (ax.min - rayOrigin[axis]) * adinv;
-            auto t1 = (ax.max - rayOrigin[axis]) * adinv;
+            auto tentry = std::fmin(t0, t1);
+            auto texit = std::fmax(t0, t1);
 
-            if (t0 < t1) {
-                if (t0 > rayT.min) { 
-                    rayT.min = t0;
-                }
-                if (t1 < rayT.max) {
-                    rayT.max = t1;
-                }
-            } else {
-                if (t1 > rayT.min) {
-                    rayT.min = t1;
-                }
-                if (t0 < rayT.max) {
-                    rayT.max = t0;
-                }
-            }
-
+            rayT.min = std::fmax(tentry, rayT.min);
+            rayT.max = std::fmin(texit, rayT.max);
             if (rayT.max <= rayT.min) {
                 return false;
             }
@@ -131,17 +115,23 @@ public:
 
     // Returns the index of the longest axis of the bounding box.
     int longestAxis() const {
-        if (x.length() > y.length()) {
-            return x.length() > z.length() ? 0 : 2;
+        float dx = max.x - min.x;
+        float dy = max.y - min.y;
+        float dz = max.z - min.z;
+
+        if (dx > dy && dx > dz) {
+            return 0;
+        } else if (dy > dz) {
+            return 1;
         } else {
-            return y.length() > z.length() ? 1 : 2;
+            return 2;
         }
     }
 
     static const AABB empty;
 };
 
-const AABB AABB::empty = AABB(Interval::empty, Interval::empty, Interval::empty);
+const AABB AABB::empty{};
 
 inline double randomDouble() {
     thread_local std::uniform_real_distribution<double> distribution(0.0, 1.0);
@@ -150,7 +140,7 @@ inline double randomDouble() {
 }
 
 inline double randomDouble(double min, double max) {
-    return min + (max-min) * randomDouble();
+    return min + (max - min) * randomDouble();
 }
 
 static Vec3 randomVec3() {
