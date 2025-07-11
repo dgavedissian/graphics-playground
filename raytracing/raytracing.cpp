@@ -14,13 +14,13 @@
 
 #include "math.h"
 #include "material.h"
-#include "hittable.h"
+#include "object.h"
 #include "bvh_tree.h"
 #include "renderer.h"
 
 class Renderer {
 public:
-    Renderer(const Hittable& scene, int imageWidth, int imageHeight, int maxDepth, int samples, double gamma, Vec3 cameraCentre) :
+    Renderer(const Object& scene, int imageWidth, int imageHeight, int maxDepth, int samples, double gamma, Vec3 cameraCentre) :
         scene_(scene),
         imageWidth_(imageWidth),
         imageHeight_(imageHeight),
@@ -105,7 +105,7 @@ public:
     }
 
 private:
-    const Hittable& scene_;
+    const Object& scene_;
 
     int imageWidth_;
     int imageHeight_;
@@ -280,11 +280,11 @@ int main() {
     const int numWorkers = std::max(1u, std::thread::hardware_concurrency() - 1);
     const int samples = 10;
 
-    Scene scene;
-    scene.add(std::make_unique<Sphere>(Vec3(0, -1000, 0), 1000, Material{MAT_LAMBERTIAN, Vec3(0.5), 0, 0, Vec3()}));
-    // scene.add(std::make_unique<Sphere>(Vec3(0, 0, -1.25), 0.5, std::make_unique<GlassMaterial>(1.5)));
-    // scene.add(std::make_unique<Sphere>(Vec3(1, -0.25, -1.25), 0.25, std::make_unique<LambertianMaterial>(Vec3(0.1, 0.2, 0.5))));
-    // scene.add(std::make_unique<Sphere>(Vec3(-1, -0.5 + 0.4, -1.25), 0.4, std::make_unique<MetalMaterial>(Vec3(0.8), 0.2)));
+    std::vector<std::unique_ptr<Object>> scene;
+    scene.push_back(std::make_unique<Sphere>(Vec3(0, -1000, 0), 1000, Material{MAT_LAMBERTIAN, Vec3(0.5), 0, 0, Vec3()}));
+    // scene.push_back(std::make_unique<Sphere>(Vec3(0, 0, -1.25), 0.5, std::make_unique<GlassMaterial>(1.5)));
+    // scene.push_back(std::make_unique<Sphere>(Vec3(1, -0.25, -1.25), 0.25, std::make_unique<LambertianMaterial>(Vec3(0.1, 0.2, 0.5))));
+    // scene.push_back(std::make_unique<Sphere>(Vec3(-1, -0.5 + 0.4, -1.25), 0.4, std::make_unique<MetalMaterial>(Vec3(0.8), 0.2)));
 
     const int size = 10;
     for (int x = -size; x <= size; ++x) {
@@ -308,11 +308,11 @@ int main() {
                 mat.refractionIndex = 1.5;
                 break;
             }
-            scene.add(std::make_unique<Sphere>(centre, size, std::move(mat)));
+            scene.push_back(std::make_unique<Sphere>(centre, size, std::move(mat)));
         }
     }
 
-    scene.add(std::make_unique<Sphere>(Vec3(3, 5, 0), 2, Material{MAT_LIGHT, Vec3(), 0.0, 0.0, Vec3(3)}));
+    scene.push_back(std::make_unique<Sphere>(Vec3(3, 5, 0), 2, Material{MAT_LIGHT, Vec3(), 0.0, 0.0, Vec3(3)}));
 
     const int imageWidth = 960;
     const int imageHeight = 540;
