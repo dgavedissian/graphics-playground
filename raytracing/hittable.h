@@ -3,6 +3,19 @@
 #include "math.h"
 #include "material.h"
 
+struct HitResult {
+    Vec3 point;
+    Vec3 normal;
+    double t;
+    bool frontFace;
+    const Material* material;
+
+    void setNormal(const Ray& r, const Vec3& outwardNormal) {
+        frontFace = glm::dot(r.direction(), outwardNormal) < 0;
+        normal = frontFace ? outwardNormal : -outwardNormal;
+    }
+};
+
 class Hittable {
 public:
     virtual ~Hittable() = default;
@@ -14,7 +27,7 @@ public:
 
 class Sphere : public Hittable {
 public:
-    Sphere(const Vec3& centre, double radius, std::unique_ptr<Material> material) :
+    Sphere(const Vec3& centre, double radius, Material material) :
         centre_(centre),
         radius_(std::fmax(0.0, radius)),
         material_(std::move(material))
@@ -48,7 +61,7 @@ public:
         result.t = root;
         result.point = r.at(root);
         result.setNormal(r, (result.point - centre_) / radius_);
-        result.material = material_.get();
+        result.material = &material_;
         return true;
     }
 
@@ -57,7 +70,7 @@ public:
 private:
     Vec3 centre_;
     double radius_;
-    std::unique_ptr<Material> material_;
+    Material material_;
 
     AABB bbox_;
 

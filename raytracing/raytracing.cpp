@@ -16,6 +16,7 @@
 #include "material.h"
 #include "hittable.h"
 #include "bvh_tree.h"
+#include "renderer.h"
 
 class Renderer {
 public:
@@ -125,34 +126,10 @@ private:
         // Take the average of N samples for this pixel, with slight random offsets for anti-aliasing.
         Vec3 pixelColour = Vec3(0, 0, 0);
         for (int i = 0; i < samples_; ++i) {
-            pixelColour += rayColour(getRay(x, y), maxDepth_);
+            pixelColour += rayColour(scene_, getRay(x, y), maxDepth_);
         }
         pixelColour /= double(samples_);
         writeColour(data, x, y, imageWidth_, invGamma_, pixelColour);
-    }
-
-    Vec3 rayColour(const Ray& r, int depth) {
-        if (depth == 0) {
-            // If we've run out of rays, then return no colour.
-            return Vec3(0, 0, 0);
-        }
-
-        // Perform ray test.
-        HitResult result;
-        bool hit = scene_.hit(r, Interval(0.001, std::numeric_limits<double>::max()), result);
-
-        if (!hit) {
-            return Vec3(0.4, 0.6, 0.9);
-        }
-
-        Ray scattered;
-        Vec3 attenuation;
-        Vec3 emission = result.material->emitted(result.point);
-
-        if (result.material->scatter(r, result, attenuation, scattered)) {
-            return emission + attenuation * rayColour(scattered, depth-1);
-        }
-        return emission;
     }
 
     Ray getRay(int x, int y) {
@@ -304,7 +281,7 @@ int main() {
     const int samples = 10;
 
     Scene scene;
-    scene.add(std::make_unique<Sphere>(Vec3(0, -1000, 0), 1000, std::make_unique<LambertianMaterial>(Vec3(0.5))));
+    scene.add(std::make_unique<Sphere>(Vec3(0, -1000, 0), 1000, Material{MAT_LAMBERTIAN, Vec3(0.5), 0, 0, Vec3()}));
     // scene.add(std::make_unique<Sphere>(Vec3(0, 0, -1.25), 0.5, std::make_unique<GlassMaterial>(1.5)));
     // scene.add(std::make_unique<Sphere>(Vec3(1, -0.25, -1.25), 0.25, std::make_unique<LambertianMaterial>(Vec3(0.1, 0.2, 0.5))));
     // scene.add(std::make_unique<Sphere>(Vec3(-1, -0.5 + 0.4, -1.25), 0.4, std::make_unique<MetalMaterial>(Vec3(0.8), 0.2)));
@@ -315,27 +292,27 @@ int main() {
             auto size = randomDouble(0.15, 0.3);
             Vec3 centre{x + 0.9 * randomDouble(), size, y + 0.9 * randomDouble()};
 
-            std::unique_ptr<Material> material;
-            switch (randomInt(0, 3)) {
-            case 0: {
-                material = std::make_unique<LambertianMaterial>(randomVec3() * randomVec3());
+            Material mat;
+            mat.type = randomInt(0, 3) + 1;
+            switch (mat.type) {
+            case MAT_LAMBERTIAN: {
+                mat.albedo = randomVec3() * randomVec3();
                 break;
             }
-            case 1: {
-                auto albedo = randomVec3(0.5, 1);
-                auto fuzz = randomDouble(0, 0.5);
-                material = std::make_unique<MetalMaterial>(albedo, fuzz);
+            case MAT_METAL: {
+                mat.albedo = randomVec3(0.5, 1);
+                mat.fuzz = randomDouble(0, 0.5);
                 break;
             }
-            case 2:
-                material = std::make_unique<GlassMaterial>(1.5);
+            case MAT_GLASS:
+                mat.refractionIndex = 1.5;
                 break;
             }
-            scene.add(std::make_unique<Sphere>(centre, size, std::move(material)));
+            scene.add(std::make_unique<Sphere>(centre, size, std::move(mat)));
         }
     }
 
-    scene.add(std::make_unique<Sphere>(Vec3(3, 5, 0), 2, std::make_unique<LightMaterial>(Vec3(3))));
+    scene.add(std::make_unique<Sphere>(Vec3(3, 5, 0), 2, Material{MAT_LIGHT, Vec3(), 0.0, 0.0, Vec3(3)}));
 
     const int imageWidth = 960;
     const int imageHeight = 540;
