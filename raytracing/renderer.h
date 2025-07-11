@@ -2,7 +2,7 @@
 
 #include "math.h"
 #include "material.h"
-#include "hittable.h"
+#include "object.h"
 
 double reflectance(double cosine, double refractionIndex) {
     // Use Schlick's approximation for reflectance.
@@ -59,7 +59,7 @@ bool materialScatter(const Material& mat, const Ray& ray, const HitResult& resul
     }
 }
 
-Vec3 rayColour(const Hittable& scene, const Ray& r, int depth) {
+Vec3 rayColour(const Object& scene, const Ray& r, int depth) {
     if (depth == 0) {
         // If we've run out of rays, then return no colour.
         return Vec3(0, 0, 0);

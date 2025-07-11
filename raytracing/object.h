@@ -16,16 +16,15 @@ struct HitResult {
     }
 };
 
-class Hittable {
+class Object {
 public:
-    virtual ~Hittable() = default;
+    virtual ~Object() = default;
 
     virtual bool hit(const Ray& r, Interval t, HitResult& result) const = 0;
-
     virtual AABB boundingBox() const = 0;
 };
 
-class Sphere : public Hittable {
+class Sphere : public Object {
 public:
     Sphere(const Vec3& centre, double radius, Material material) :
         centre_(centre),
@@ -74,37 +73,4 @@ private:
 
     AABB bbox_;
 
-};
-
-class Scene : public Hittable {
-public:
-    void add(std::unique_ptr<Hittable> hittable) {
-        bbox_ = AABB(bbox_, hittable->boundingBox());
-        hittables_.emplace_back(std::move(hittable));
-    }
-
-    bool hit(const Ray& r, Interval t, HitResult& result) const override {
-        bool hitAnything = false;
-        double tmax = t.max;
-
-        for (const auto& hittable : hittables_) {
-            HitResult tempResult;
-            if (hittable->hit(r, Interval(t.min, tmax), tempResult)) {
-                hitAnything = true;
-                result = tempResult;
-
-                // The maximum the ray can travel now, is to where this object was hit.
-                tmax = tempResult.t;
-            }
-        }
-        return hitAnything;
-    }
-
-    AABB boundingBox() const override { return bbox_; }
-
-    const std::vector<std::unique_ptr<Hittable>>& hittables() const { return hittables_; }
-
-private:
-    std::vector<std::unique_ptr<Hittable>> hittables_;
-    AABB bbox_;
 };
