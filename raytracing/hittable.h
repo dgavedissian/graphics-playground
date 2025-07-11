@@ -10,8 +10,6 @@ public:
     virtual bool hit(const Ray& r, Interval t, HitResult& result) const = 0;
 
     virtual AABB boundingBox() const = 0;
-
-    virtual bool isLeaf() const { return true; }
 };
 
 class Sphere : public Hittable {
@@ -25,22 +23,22 @@ public:
         bbox_ = AABB(centre - rvec, centre + rvec);
     }
 
+    // r.direction() must be normalised.
     bool hit(const Ray& r, Interval t, HitResult& result) const override {
         Vec3 oc = centre_ - r.origin();
-        auto a = glm::dot(r.direction(), r.direction());
         auto h = glm::dot(r.direction(), oc);
         auto c = glm::dot(oc, oc) - radius_ * radius_;
-        auto discriminant = h * h - a * c;
+        auto discriminant = h * h - c;
         
         if (discriminant < 0) {
             return false;
         }
 
         auto sqrt_discriminant = std::sqrt(discriminant);
-        auto root = (h - sqrt_discriminant) / a;
+        auto root = h - sqrt_discriminant;
         if (!t.surrounds(root)) {
             // Try the other root.
-            root = (h + sqrt_discriminant) / a;
+            root = h + sqrt_discriminant;
             if (!t.surrounds(root)) {
                 // Both roots are outside the range.
                 return false;
