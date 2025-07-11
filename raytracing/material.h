@@ -8,23 +8,23 @@ class Material {
 public:
     virtual ~Material() = default;
 
-    virtual bool scatter(const Ray& ray, const HitResult& result, color& attenuation, Ray& scattered) const {
+    virtual bool scatter(const Ray& ray, const HitResult& result, Vec3& attenuation, Ray& scattered) const {
         return false;
     }
 
-    virtual color emitted(const vec3& p) const {
-        return color(0);
+    virtual Vec3 emitted(const Vec3& p) const {
+        return Vec3(0);
     }
 };
 
 struct HitResult {
-    vec3 point;
-    vec3 normal;
+    Vec3 point;
+    Vec3 normal;
     double t;
     bool front_face;
     Material* material;
 
-    void setNormal(const Ray& r, const vec3& outward_normal) {
+    void setNormal(const Ray& r, const Vec3& outward_normal) {
         front_face = glm::dot(r.direction(), outward_normal) < 0;
         normal = front_face ? outward_normal : -outward_normal;
     }
@@ -33,13 +33,13 @@ struct HitResult {
 
 class LambertianMaterial : public Material {
 public:
-    LambertianMaterial(color albedo) : albedo_(albedo) {}
+    LambertianMaterial(Vec3 albedo) : albedo_(albedo) {}
 
-    bool scatter(const Ray& ray, const HitResult& result, color& attenuation, Ray& scattered) const override {
-        vec3 direction = result.normal + randomUnitVector();
+    bool scatter(const Ray& ray, const HitResult& result, Vec3& attenuation, Ray& scattered) const override {
+        Vec3 direction = result.normal + randomUnitVector();
 
         // Prevent degenerate rays.
-        if (glm::all(glm::epsilonEqual(direction, vec3(0.0), 1e-8))) {
+        if (glm::all(glm::epsilonEqual(direction, Vec3(0.0), 1e-8))) {
             direction = result.normal;
         }
 
@@ -49,16 +49,16 @@ public:
     }
 
 private:
-    color albedo_;
+    Vec3 albedo_;
 
 };
 
 class MetalMaterial : public Material {
 public:
-    MetalMaterial(color albedo, double fuzz) : albedo_(albedo), fuzz_(fuzz < 1 ? fuzz : 1) {}
+    MetalMaterial(Vec3 albedo, double fuzz) : albedo_(albedo), fuzz_(fuzz < 1 ? fuzz : 1) {}
 
-    bool scatter(const Ray& ray, const HitResult& result, color& attenuation, Ray& scattered) const override {
-        vec3 reflected = glm::reflect(ray.direction(), result.normal);
+    bool scatter(const Ray& ray, const HitResult& result, Vec3& attenuation, Ray& scattered) const override {
+        Vec3 reflected = glm::reflect(ray.direction(), result.normal);
         reflected = glm::normalize(reflected) + fuzz_ * randomUnitVector();
         scattered = Ray(result.point, reflected);
         attenuation = albedo_;
@@ -66,7 +66,7 @@ public:
     }
 
 private:
-    color albedo_;
+    Vec3 albedo_;
     double fuzz_;
 
 };
@@ -75,19 +75,19 @@ class GlassMaterial : public Material {
 public:
     GlassMaterial(double refractionIndex) : refractionIndex_(refractionIndex) {}
 
-    bool scatter(const Ray& ray, const HitResult& result, color& attenuation, Ray& scattered) const override {
-        attenuation = color(1.0);
+    bool scatter(const Ray& ray, const HitResult& result, Vec3& attenuation, Ray& scattered) const override {
+        attenuation = Vec3(1.0);
 
         double ri = result.front_face ? (1.0 / refractionIndex_) : refractionIndex_;
 
-        vec3 unit_direction = glm::normalize(ray.direction());
+        Vec3 unit_direction = glm::normalize(ray.direction());
 
         double cos_theta = std::fmin(glm::dot(-unit_direction, result.normal), 1.0);
         double sin_theta = std::sqrt(1.0 - cos_theta*cos_theta);
 
         bool cannot_refract = ri * sin_theta > 1.0;
 
-        vec3 direction;
+        Vec3 direction;
         if (cannot_refract || reflectance(cos_theta, ri) > randomDouble()) {
             direction = glm::reflect(unit_direction, result.normal);
         } else {
@@ -111,12 +111,12 @@ private:
 
 class LightMaterial : public Material {
 public:
-    LightMaterial(const color& emit) : emit_(emit) {}
+    LightMaterial(const Vec3& emit) : emit_(emit) {}
 
-    color emitted(const vec3& p) const override {
+    Vec3 emitted(const Vec3& p) const override {
         return emit_;
     }
 
 private:
-    color emit_;
+    Vec3 emit_;
 };
