@@ -13,11 +13,18 @@
 #include "object.h"
 #include "cpu_renderer.h"
 
+#ifdef __APPLE__
+#include "metal_renderer.h"
+
+#define GPU_RENDERER
+#endif
+
+
 int main() {
     const int numWorkers = std::max(1u, std::thread::hardware_concurrency() - 1);
     const int samples = 10;
 
-    std::vector<std::unique_ptr<Object>> scene;
+    std::vector<std::unique_ptr<RTObject>> scene;
     scene.push_back(std::make_unique<Sphere>(Vec3(0, -1000, 0), 1000, Material{MAT_LAMBERTIAN, Vec3(0.5), 0, 0, Vec3()}));
     // scene.push_back(std::make_unique<Sphere>(Vec3(0, 0, -1.25), 0.5, std::make_unique<GlassMaterial>(1.5)));
     // scene.push_back(std::make_unique<Sphere>(Vec3(1, -0.25, -1.25), 0.25, std::make_unique<LambertianMaterial>(Vec3(0.1, 0.2, 0.5))));
@@ -54,8 +61,11 @@ int main() {
     const int imageWidth = 960;
     const int imageHeight = 540;
 
+#ifdef GPU_RENDERER
+    MetalRenderer renderer(scene, imageWidth, imageHeight, 10, samples, 2.0, "Raytracing");
+#else
     CPURenderer renderer(scene, imageWidth, imageHeight, 10, samples, 2.0, numWorkers, "Raytracing");
-
+#endif
     auto start = std::chrono::system_clock::now();
     while (!renderer.shouldClose()) {
         auto frameStart = std::chrono::high_resolution_clock::now();

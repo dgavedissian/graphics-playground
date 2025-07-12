@@ -16,15 +16,15 @@ struct HitResult {
     }
 };
 
-class Object {
+class RTObject {
 public:
-    virtual ~Object() = default;
+    virtual ~RTObject() = default;
 
     virtual bool hit(const Ray& r, Interval t, HitResult& result) const = 0;
     virtual AABB boundingBox() const = 0;
 };
 
-class Sphere : public Object {
+class Sphere : public RTObject {
 public:
     Sphere(const Vec3& centre, double radius, Material material) :
         centre_(centre),

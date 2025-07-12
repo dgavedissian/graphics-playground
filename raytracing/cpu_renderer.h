@@ -9,7 +9,7 @@
 
 class CPURenderer {
 public:
-    CPURenderer(const std::vector<std::unique_ptr<Object>>& scene, int imageWidth, int imageHeight, int maxDepth, int samples, double gamma, int numWorkers, const char* title);
+    CPURenderer(const std::vector<std::unique_ptr<RTObject>>& scene, int imageWidth, int imageHeight, int maxDepth, int samples, double gamma, int numWorkers, const char* title);
 
     void setCamera(Vec3 lookfrom, Vec3 lookat, Vec3 vup, double fovDegrees);
     bool shouldClose() const;
