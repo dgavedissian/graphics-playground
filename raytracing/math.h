@@ -1,5 +1,7 @@
 #pragma once
 
+#include <random>
+
 #include <glm.hpp>
 #include <gtc/epsilon.hpp>
 
@@ -70,8 +72,6 @@ struct Interval {
     static const Interval empty;
 };
 
-const Interval Interval::empty = Interval(std::numeric_limits<double>::max(), std::numeric_limits<double>::min());
-
 class AABB {
 public:
     Vec3 min, max;
@@ -131,8 +131,6 @@ public:
     static const AABB empty;
 };
 
-const AABB AABB::empty{};
-
 inline double randomDouble() {
     thread_local std::uniform_real_distribution<double> distribution(0.0, 1.0);
     thread_local std::mt19937 generator;
@@ -143,11 +141,11 @@ inline double randomDouble(double min, double max) {
     return min + (max - min) * randomDouble();
 }
 
-static Vec3 randomVec3() {
+inline Vec3 randomVec3() {
     return Vec3(randomDouble(), randomDouble(), randomDouble());
 }
 
-static Vec3 randomVec3(double min, double max) {
+inline Vec3 randomVec3(double min, double max) {
     return Vec3(randomDouble(min, max), randomDouble(min, max), randomDouble(min, max));
 }
 

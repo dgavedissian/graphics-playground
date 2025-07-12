@@ -36,7 +36,13 @@ FetchContent_MakeAvailable(glfw)
 
 find_package(OpenGL REQUIRED)
 
-add_executable(raytracing raytracing/raytracing.cpp)
+add_executable(raytracing
+    raytracing/glad/gl.cpp
+    raytracing/cpu_renderer.cpp
+    raytracing/math.cpp
+    raytracing/raytracing.cpp
+    raytracing/single_image_window.cpp
+)
 target_link_libraries(raytracing PRIVATE stb glm-hdr glfw OpenGL::GL)
 target_compile_features(raytracing PUBLIC cxx_std_20)
 

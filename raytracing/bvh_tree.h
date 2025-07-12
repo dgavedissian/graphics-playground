@@ -13,7 +13,7 @@ struct BVHNode {
     AABB bbox;
 };
 
-std::unique_ptr<BVHNode> createNode(ObjectPtrList& objects, size_t start, size_t end) {
+inline std::unique_ptr<BVHNode> createNode(ObjectPtrList& objects, size_t start, size_t end) {
     // Build the bounding box of the span of source objects.
     auto bbox = objects[start]->boundingBox();
     for (size_t i = start + 1; i < end; i++) {
@@ -44,14 +44,14 @@ std::unique_ptr<BVHNode> createNode(ObjectPtrList& objects, size_t start, size_t
     }
 }
 
-class BVHTree : public Object {
+class BVHTree {
 public:
     BVHTree(std::unique_ptr<BVHNode> root) :
         root_(std::move(root))
     {
     }
 
-    bool hit(const Ray& r, Interval t, HitResult& result) const override {
+    bool hit(const Ray& r, Interval t, HitResult& result) const {
         BVHNode* stack[32];
         int stackLen = 0;
         double closestSoFar = t.max;
@@ -94,16 +94,12 @@ public:
         return hitAnything;
     }
 
-    AABB boundingBox() const override {
-        return root_->bbox;
-    }
-
 private:
     std::unique_ptr<BVHNode> root_;
 
 };
 
-std::unique_ptr<BVHTree> generateBVHTree(const std::vector<std::unique_ptr<Object>>& scene) {
+inline BVHTree generateBVHTree(const std::vector<std::unique_ptr<Object>>& scene) {
     ObjectPtrList hittables;
     std::transform(
         scene.begin(), scene.end(),
@@ -111,5 +107,5 @@ std::unique_ptr<BVHTree> generateBVHTree(const std::vector<std::unique_ptr<Objec
         [](const auto& p) { return p.get(); }
     );
 
-    return std::make_unique<BVHTree>(createNode(hittables, 0, hittables.size()));
+    return BVHTree(createNode(hittables, 0, hittables.size()));
 }
