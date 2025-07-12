@@ -36,15 +36,43 @@ FetchContent_MakeAvailable(glfw)
 
 find_package(OpenGL REQUIRED)
 
-add_executable(raytracing
+set(RAYTRACING_SOURCE_FILES
     raytracing/glad/gl.cpp
     raytracing/cpu_renderer.cpp
     raytracing/math.cpp
     raytracing/raytracing.cpp
     raytracing/single_image_window.cpp
 )
+
+if(APPLE)
+    # metal-cpp
+    FetchContent_Declare(
+        metalcpp
+        URL https://developer.apple.com/metal/cpp/files/metal-cpp_macOS15.2_iOS18.2.zip
+        URL_MD5 861a9b0447071c08fa43951bf68d4b99
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    )
+    FetchContent_MakeAvailable(metalcpp)
+
+    set(RAYTRACING_SOURCE_FILES
+        ${RAYTRACING_SOURCE_FILES}
+        raytracing/metal_impl.cpp
+        raytracing/metal_renderer.mm
+    )
+endif()
+
+add_executable(raytracing ${RAYTRACING_SOURCE_FILES})
 target_link_libraries(raytracing PRIVATE stb glm-hdr glfw OpenGL::GL)
 target_compile_features(raytracing PUBLIC cxx_std_20)
+
+if(APPLE)
+    target_include_directories(raytracing PRIVATE ${metalcpp_SOURCE_DIR})
+    target_link_libraries(raytracing PUBLIC
+        "$<LINK_LIBRARY:FRAMEWORK,Foundation>"
+        "$<LINK_LIBRARY:FRAMEWORK,QuartzCore>"
+        "$<LINK_LIBRARY:FRAMEWORK,Metal>"
+    )
+endif()
 
 find_package(OpenCL)
 if(NOT OpenCL_FOUND)

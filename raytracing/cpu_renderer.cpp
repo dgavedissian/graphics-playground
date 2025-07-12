@@ -92,7 +92,16 @@ inline void writeColour(uint8_t* data, int x, int y, int width, double invGamma,
     data[offset + 2] = uint8_t(255 * linearToGammaSpace(glm::clamp(pixelColour.b, 0.0, 1.0), invGamma));
 }
 
-CPURenderer::CPURenderer(const std::vector<std::unique_ptr<Object>>& scene, int imageWidth, int imageHeight, int maxDepth, int samples, double gamma, int numWorkers, const char* title) :
+CPURenderer::CPURenderer(
+    const std::vector<std::unique_ptr<RTObject>>& scene,
+    int imageWidth,
+    int imageHeight,
+    int maxDepth,
+    int samples,
+    double gamma,
+    int numWorkers,
+    const char* title
+) :
     bvhTree_(generateBVHTree(scene)),
     imageWidth_(imageWidth),
     imageHeight_(imageHeight),

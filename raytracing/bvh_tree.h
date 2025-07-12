@@ -2,18 +2,18 @@
 
 #include "object.h"
 
-using ObjectPtrList = std::vector<Object*>;
+using RTObjectPtrList = std::vector<RTObject*>;
 
 struct BVHNode {
     // hittables is non-empty if it's a leaf node.
-    ObjectPtrList hittables;
+    RTObjectPtrList hittables;
 
     std::unique_ptr<BVHNode> left;
     std::unique_ptr<BVHNode> right;
     AABB bbox;
 };
 
-inline std::unique_ptr<BVHNode> createNode(ObjectPtrList& objects, size_t start, size_t end) {
+inline std::unique_ptr<BVHNode> createNode(RTObjectPtrList& objects, size_t start, size_t end) {
     // Build the bounding box of the span of source objects.
     auto bbox = objects[start]->boundingBox();
     for (size_t i = start + 1; i < end; i++) {
@@ -21,22 +21,22 @@ inline std::unique_ptr<BVHNode> createNode(ObjectPtrList& objects, size_t start,
     }
 
     int axis = bbox.longestAxis();
-    auto comparator = [axis](const Object* a, const Object* b) {
+    auto comparator = [axis](const RTObject* a, const RTObject* b) {
         return a->boundingBox().min[axis] < b->boundingBox().min[axis];
     };
     
     size_t objectSpan = end - start;
 
     if (objectSpan == 1) {
-        return std::make_unique<BVHNode>(ObjectPtrList{objects[start]}, nullptr, nullptr, bbox);
+        return std::make_unique<BVHNode>(RTObjectPtrList{objects[start]}, nullptr, nullptr, bbox);
     } else if (objectSpan == 2) {
-        return std::make_unique<BVHNode>(ObjectPtrList{objects[start], objects[start + 1]}, nullptr, nullptr, bbox);
+        return std::make_unique<BVHNode>(RTObjectPtrList{objects[start], objects[start + 1]}, nullptr, nullptr, bbox);
     } else {
         std::sort(std::begin(objects) + start, std::begin(objects) + end, comparator);
 
         auto mid = start + objectSpan / 2;
         return std::make_unique<BVHNode>(
-            ObjectPtrList{},
+            RTObjectPtrList{},
             createNode(objects, start, mid), 
             createNode(objects, mid, end),
             bbox
@@ -71,7 +71,7 @@ public:
 
             // If this is a leaf node.
             if (n->hittables.size() > 0) {
-                for (Object* h : n->hittables) {
+                for (RTObject* h : n->hittables) {
                     HitResult tempResult;
                     if (h->hit(r, Interval{t.min, closestSoFar}, tempResult)) {
                         closestSoFar = tempResult.t;
@@ -99,8 +99,8 @@ private:
 
 };
 
-inline BVHTree generateBVHTree(const std::vector<std::unique_ptr<Object>>& scene) {
-    ObjectPtrList hittables;
+inline BVHTree generateBVHTree(const std::vector<std::unique_ptr<RTObject>>& scene) {
+    RTObjectPtrList hittables;
     std::transform(
         scene.begin(), scene.end(),
         std::back_inserter(hittables),
