@@ -39,8 +39,8 @@ find_package(OpenGL REQUIRED)
 set(RAYTRACING_SOURCE_FILES
     raytracing/glad/gl.cpp
     raytracing/cpu_renderer.cpp
+    raytracing/main.cpp
     raytracing/math.cpp
-    raytracing/raytracing.cpp
     raytracing/single_image_window.cpp
 )
 
@@ -58,6 +58,7 @@ if(APPLE)
         ${RAYTRACING_SOURCE_FILES}
         raytracing/metal_impl.cpp
         raytracing/metal_renderer.mm
+        raytracing/metal_renderer_shader.metal
     )
 endif()
 

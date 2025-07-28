@@ -16,20 +16,6 @@ public:
     void draw();
 
 private:
-    BVHTree bvhTree_;
-
-    int imageWidth_;
-    int imageHeight_;
-    int maxDepth_;
-    int samples_;
-    double invGamma_;
-
-    int numWorkers_;
-    
-    Vec3 lookfrom_;
-    Vec3 lookat_;
-    Vec3 vup_;
-    double fovDegrees_;
-
-    std::unique_ptr<struct MetalImpl> impl_;
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
 };
