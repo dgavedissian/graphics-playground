@@ -58,27 +58,55 @@ bool materialScatter(const Material& mat, const Ray& ray, const HitResult& resul
     }
 }
 
-Vec3 rayColour(const BVHTree& bvhTree, const Ray& r, int depth) {
-    if (depth == 0) {
-        // If we've run out of rays, then return no colour.
-        return Vec3(0, 0, 0);
+Vec3 rayColour(const BVHTree& bvhTree, Ray r, int depth) {
+    Vec3 colour = Vec3(0.0);
+    Vec3 totalAttenuation = Vec3(1.0);
+    for (int i = 0; i < depth; ++i) {
+        // Perform ray test.
+        HitResult result;
+        bool hit = bvhTree.hit(r, Interval(0.001, std::numeric_limits<double>::max()), result);
+        if (!hit) {
+            colour += totalAttenuation * Vec3(0.4, 0.6, 0.9);
+            break;
+        }
+        
+        Ray scattered;
+        Vec3 attenuation;
+        Vec3 emission = result.material->emit;
+        
+        if (!materialScatter(*result.material, r, result, attenuation, scattered)) {
+            colour += totalAttenuation * emission;
+            break;
+        }
+        
+        colour += totalAttenuation * emission;
+        totalAttenuation *= attenuation;
+        r = scattered;
     }
+    return colour;
+    
+/*
+     if (depth == 0) {
+         // If we've run out of rays, then return no colour.
+         return Vec3(0, 0, 0);
+     }
 
-    // Perform ray test.
-    HitResult result;
-    bool hit = bvhTree.hit(r, Interval(0.001, std::numeric_limits<double>::max()), result);
-    if (!hit) {
-        return Vec3(0.4, 0.6, 0.9);
-    }
+     // Perform ray test.
+     HitResult result;
+     bool hit = bvhTree.hit(r, Interval(0.001, std::numeric_limits<double>::max()), result);
+     if (!hit) {
+         return Vec3(0.4, 0.6, 0.9);
+     }
 
-    Ray scattered;
-    Vec3 attenuation;
-    Vec3 emission = result.material->emit;
+     Ray scattered;
+     Vec3 attenuation;
+     Vec3 emission = result.material->emit;
 
-    if (materialScatter(*result.material, r, result, attenuation, scattered)) {
-        return emission + attenuation * rayColour(bvhTree, scattered, depth - 1);
-    }
-    return emission;
+     if (materialScatter(*result.material, r, result, attenuation, scattered)) {
+         return emission + attenuation * rayColour(bvhTree, scattered, depth - 1);
+     }
+     return emission;
+ */
 }
 
 inline double linearToGammaSpace(double value, double invGamma) {

@@ -16,7 +16,7 @@
 #ifdef __APPLE__
 #include "metal_renderer.h"
 
-//#define GPU_RENDERER
+#define GPU_RENDERER
 #endif
 
 int main() {
@@ -77,7 +77,7 @@ int main() {
         
         auto frameEnd = std::chrono::high_resolution_clock::now();
         auto frameTimeMs = std::chrono::duration_cast<std::chrono::milliseconds>(frameEnd - frameStart).count();
-//        std::cout << "\rFrame time: " << frameTimeMs << " ms" << std::flush;
+        std::cout << "\rFrame time: " << frameTimeMs << " ms" << std::flush;
     }
     return 0;
 }

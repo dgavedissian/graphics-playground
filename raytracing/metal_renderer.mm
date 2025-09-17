@@ -15,6 +15,13 @@
 #include <iostream>
 #include <fstream>
 
+struct GPUCamera {
+    glm::vec3 origin;
+    glm::vec3 lowerLeftCorner;
+    glm::vec3 horizontal;
+    glm::vec3 vertical;
+};
+
 class MetalRenderer::Impl {
 public:
     Impl(const std::vector<std::unique_ptr<RTObject>>& scene, int imageWidth, int imageHeight, int maxDepth, int samples, double gamma, const char* title);
@@ -28,8 +35,6 @@ public:
     void encodeRenderCommand(MTL::RenderCommandEncoder* renderEncoder);
 
 private:
-    BVHTree bvhTree_;
-
     int imageWidth_;
     int imageHeight_;
     int maxDepth_;
@@ -42,6 +47,7 @@ private:
     Vec3 lookat_;
     Vec3 vup_;
     double fovDegrees_;
+    GPUCamera camera_;
 
     MTL::Device* metalDevice_;
     GLFWwindow* glfwWindow_;
@@ -54,6 +60,11 @@ private:
     MTL::CommandBuffer* metalCommandBuffer_;
     MTL::RenderPipelineState* metalRenderPSO_;
     MTL::Buffer* triangleVertexBuffer_;
+    
+    MTL::Buffer* objectsBuffer_;
+    MTL::Buffer* objectCountBuffer_;
+    MTL::Buffer* materialsBuffer_;
+    MTL::Buffer* cameraBuffer_;
 };
 
 MetalRenderer::MetalRenderer(
@@ -89,7 +100,6 @@ MetalRenderer::Impl::Impl(
     double gamma,
     const char* title
 ) :
-    bvhTree_(generateBVHTree(scene)),
     imageWidth_(imageWidth),
     imageHeight_(imageHeight),
     maxDepth_(maxDepth),
@@ -102,29 +112,39 @@ MetalRenderer::Impl::Impl(
 
     glfwInit();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindow_ = glfwCreateWindow(800, 600, "Metal Engine", NULL, NULL);
+    glfwWindow_ = glfwCreateWindow(imageWidth, imageHeight, "Metal Engine", NULL, NULL);
     if (!glfwWindow_) {
         glfwTerminate();
         exit(EXIT_FAILURE);
     }
 
     int width, height;
-    glfwGetFramebufferSize(glfwWindow_, &width, &height);
+    glfwGetWindowSize(glfwWindow_, &width, &height);
 
     metalWindow_ = glfwGetCocoaWindow(glfwWindow_);
     metalLayer_ = [CAMetalLayer layer];
     metalLayer_.device = (__bridge id<MTLDevice>)metalDevice_;
-    metalLayer_.pixelFormat = MTLPixelFormatBGRA8Unorm;
+    metalLayer_.pixelFormat = MTLPixelFormatBGRA8Unorm_sRGB;
     metalLayer_.drawableSize = CGSizeMake(width, height);
     metalWindow_.contentView.layer = metalLayer_;
     metalWindow_.contentView.wantsLayer = YES;
 
-    glm::vec4 triangleVertices[] = {
-        {-0.5f, -0.5f, 0.0f, 0.0f},
-        { 0.5f, -0.5f, 0.0f, 0.0f},
-        { 0.0f,  0.5f, 0.0f, 0.0f}
-    };
-    triangleVertexBuffer_ = metalDevice_->newBuffer(&triangleVertices, sizeof(triangleVertices), MTL::ResourceStorageModeShared);
+    std::vector<GPUObject> objectList;
+    std::vector<GPUMaterial> materialList;
+    for (const auto& object : scene) {
+        objectList.push_back(object->asGPUObject(materialList));
+    }
+    materialList.push_back(GPUMaterial{
+        MAT_LAMBERTIAN,
+        glm::vec3(0.1, 0.2, 0.3),
+        glm::vec3(0.0, 0.0, 0.0),
+        0.0, 0.0
+    });
+    objectsBuffer_ = metalDevice_->newBuffer(objectList.data(), objectList.size() * sizeof(GPUObject), MTL::ResourceStorageModeShared);
+    std::uint32_t objectCount = std::uint32_t(objectList.size());
+    objectCountBuffer_ = metalDevice_->newBuffer(&objectCount, sizeof(objectCount), MTL::ResourceStorageModeShared);
+    materialsBuffer_ = metalDevice_->newBuffer(materialList.data(), materialList.size() * sizeof(GPUMaterial), MTL::ResourceStorageModeShared);
+    cameraBuffer_ = metalDevice_->newBuffer(sizeof(GPUCamera), MTL::ResourceStorageModeManaged);
     
     NS::Error* error = nullptr;
     
@@ -167,7 +187,25 @@ MetalRenderer::Impl::~Impl() {
 }
 
 void MetalRenderer::Impl::setCamera(Vec3 lookfrom, Vec3 lookat, Vec3 vup, double fovDegrees) {
+    lookfrom_ = lookfrom;
+    lookat_ = lookat;
+    vup_ = vup;
+    fovDegrees_ = fovDegrees;
 
+    Vec3 w = glm::normalize(lookfrom_ - lookat_);
+    Vec3 u = glm::normalize(glm::cross(vup_, w));
+    Vec3 v = glm::cross(w, u);
+
+    auto focalLength = glm::length(lookfrom - lookat);
+    auto theta = glm::radians(fovDegrees_);
+    auto h = std::tan(theta / 2);
+    auto viewportHeight = 2 * h * focalLength;
+    auto viewportWidth = viewportHeight * (double(imageWidth_)/imageHeight_);
+
+    camera_.origin = lookfrom;
+    camera_.horizontal = viewportWidth * u;
+    camera_.vertical = viewportHeight * v;
+    camera_.lowerLeftCorner = glm::vec3(lookfrom_ - focalLength * w) - camera_.horizontal / 2.0f - camera_.vertical / 2.0f;
 }
 
 bool MetalRenderer::Impl::shouldClose() const {
@@ -204,10 +242,14 @@ void MetalRenderer::Impl::sendRenderCommand() {
 }
 
 void MetalRenderer::Impl::encodeRenderCommand(MTL::RenderCommandEncoder* renderCommandEncoder) {
+    GPUCamera* data = static_cast<GPUCamera*>(cameraBuffer_->contents());
+    *data = camera_;
+    cameraBuffer_->didModifyRange(NS::Range::Make(0, sizeof(GPUCamera)));
+    
     renderCommandEncoder->setRenderPipelineState(metalRenderPSO_);
-    renderCommandEncoder->setVertexBuffer(triangleVertexBuffer_, 0, 0);
-    MTL::PrimitiveType typeTriangle = MTL::PrimitiveTypeTriangle;
-    NS::UInteger vertexStart = 0;
-    NS::UInteger vertexCount = 3;
-    renderCommandEncoder->drawPrimitives(typeTriangle, vertexStart, vertexCount);
+    renderCommandEncoder->setFragmentBuffer(objectsBuffer_, 0, 0);
+    renderCommandEncoder->setFragmentBuffer(objectCountBuffer_, 0, 1);
+    renderCommandEncoder->setFragmentBuffer(materialsBuffer_, 0, 2);
+    renderCommandEncoder->setFragmentBuffer(cameraBuffer_, 0, 3);
+    renderCommandEncoder->drawPrimitives(MTL::PrimitiveTypeTriangleStrip, NS::UInteger(0), NS::UInteger(4));
 }

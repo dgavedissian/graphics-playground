@@ -16,12 +16,19 @@ struct HitResult {
     }
 };
 
+struct GPUObject {
+    glm::vec3 centre;
+    float radius;
+    std::uint32_t materialIndex;
+};
+
 class RTObject {
 public:
     virtual ~RTObject() = default;
 
     virtual bool hit(const Ray& r, Interval t, HitResult& result) const = 0;
     virtual AABB boundingBox() const = 0;
+    virtual GPUObject asGPUObject(std::vector<GPUMaterial>& materialStorage) const = 0;
 };
 
 class Sphere : public RTObject {
@@ -65,6 +72,22 @@ public:
     }
 
     AABB boundingBox() const override { return bbox_; }
+    
+    GPUObject asGPUObject(std::vector<GPUMaterial>& materialStorage) const override {
+        GPUMaterial mat;
+        mat.type = material_.type;
+        mat.albedo = glm::vec3(material_.albedo);
+        mat.fuzz = material_.fuzz;
+        mat.refractionIndex = material_.refractionIndex;
+        mat.emit = material_.emit;
+        materialStorage.push_back(mat);
+        
+        GPUObject object;
+        object.centre = glm::vec3(centre_);
+        object.radius = radius_;
+        object.materialIndex = std::uint32_t(materialStorage.size() - 1);
+        return object;
+    }
 
 private:
     Vec3 centre_;
